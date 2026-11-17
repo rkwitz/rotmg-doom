@@ -1,0 +1,71 @@
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index 3bf3eb0..7597001 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -10,6 +10,7 @@ package romtg
+    import com.company.assembleegameclient.parameters.Parameters;
+    import flash.display.DisplayObject;
+    import flash.events.Event;
++   import flash.geom.Point;
+    import flash.geom.Rectangle;
+    import flash.events.IOErrorEvent;
+    import flash.events.KeyboardEvent;
+@@ -41,6 +42,7 @@ package romtg
+     *   quest ID X Y HP MAX NAME | quest -1   the quest (boss) RotMG points you to, or none
+     *   cash CREDITS FAME     your gold and fame
+     *   tip X Y W H | tip -   a tooltip is showing at X Y W H (RotMG stage units), or none
++    *   view X Y R            RotMG's circle of ground round you: its middle and radius (800x600 units)
+     *   st COLOR TEXT         a status text over you (XP gained, level up, quest complete...)
+     *   chat NC TC NAME<tab>TO<tab>TEXT       a chat line (NC/TC: name and text colours)
+     *   swap                  the Doom button
+@@ -82,6 +84,12 @@ package romtg
+       private static var retryAt:int = 0;
+       private static var incoming:String = "";
+       private static var map:Map;
++      // RotMG draws the ground in a circle round you (Map.draw: squares within 15 tiles). Its
++      // middle and radius go to the swapper (`view`), which shows the square inside the circle
++      // in Doom's corner, so none of the black round it shows (Ryan, 2026-11-13). A little under
++      // 15: the circle's edge is ragged, whole tiles.
++      private static const VIEW_TILES:Number = 14.5;
++      private static var viewSent:String = "";
+       private static var posAt:int = 0;
+       private static var objectsAt:int = 0;
+       private static var projectilesAt:int = 0;
+@@ -195,6 +203,29 @@ package romtg
+          return new Rectangle((g.x - left) / unit, (g.y - top) / unit, g.width / unit, g.height / unit);
+       }
+ 
++      /** `view X Y R`: the middle of RotMG's circle of ground (you) and its radius, in RotMG's
++       *  800x600 units of its window (as inRotmgUnits), when they change. */
++      private static function sendView(player:Player) : void
++      {
++         if (map == null || map.stage == null || player.posS_ == null || player.posS_.length < 2)
++         {
++            return;
++         }
++         var w:Number = map.stage.stageWidth, h:Number = map.stage.stageHeight;
++         var unit:Number = w / 800;
++         var left:Number = -(w - 800) / 2, top:Number = -(h - 600) / 2;
++         // The camera draws a tile 50 units wide in the map's own coordinates (Camera).
++         var c:Point = map.localToGlobal(new Point(player.posS_[0], player.posS_[1]));
++         var e:Point = map.localToGlobal(new Point(player.posS_[0] + 50 * VIEW_TILES, player.posS_[1]));
++         var line:String = "view " + ((c.x - left) / unit).toFixed(1) + " " + ((c.y - top) / unit).toFixed(1)
++            + " " + (Point.distance(c, e) / unit).toFixed(1);
++         if (line != viewSent)
++         {
++            viewSent = line;
++            send(line);
++         }
++      }
++
+       /** A tooltip moved, or went (`showing` false): where it is, for the swapper to let it show
+        *  over Doom while you use RotMG's side panel. */
+       public static function tooltip(tip:Object, showing:Boolean) : void
+@@ -278,6 +309,7 @@ package romtg
+          {
+             hudAt = now;
+             hud(player, now);
++            sendView(player);
+          }
+          if (viewing)
+          {

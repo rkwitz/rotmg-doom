@@ -1,0 +1,67 @@
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index 29d2f9b..e902b3c 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -410,6 +410,13 @@ package romtg
+          {
+             sendWalking(player, now);
+          }
++         if (interactUntil > 0)
++         {
++            if (now > interactUntil || interactNow())
++            {
++               interactUntil = 0;   // used, or nothing came within INTERACT_WAIT_MS
++            }
++         }
+          if ((player.x_ != lastX || player.y_ != lastY) && now - posAt >= POS_MS)
+          {
+             posAt = now;
+@@ -811,6 +818,18 @@ package romtg
+          {
+             return;
+          }
++         if (name == "interact" && half != "up")
++         {
++            // Enter in Doom: the side panel's button for the portal, door or bag you're at.
++            // That panel is only made on RotMG's next redraw, so a press as you reach it found
++            // none (Ryan, 2026-11-15: sometimes it took a click): it's brought up to date
++            // first, and if there's still nothing to use, the press waits for one a moment.
++            if (!interactNow())
++            {
++               interactUntil = getTimer() + INTERACT_WAIT_MS;
++            }
++            return;
++         }
+          if (half != "up")
+          {
+             map.gs_.stage.dispatchEvent(new KeyboardEvent(KeyboardEvent.KEY_DOWN, true, false, 0, code));
+@@ -821,6 +840,29 @@ package romtg
+          }
+       }
+ 
++      private static var interactUntil:int = 0;
++      private static const INTERACT_WAIT_MS:int = 700;
++
++      /** Presses RotMG's interact key if its interact panel has something to use now. */
++      private static function interactNow() : Boolean
++      {
++         if (map == null || map.gs_ == null || map.gs_.stage == null || map.gs_.hudView == null
++             || map.gs_.hudView.interactPanel == null)
++         {
++            return false;
++         }
++         var panel:Object = map.gs_.hudView.interactPanel;
++         panel.draw();
++         if (panel.currObj_ == null)
++         {
++            return false;
++         }
++         var code:uint = Parameters.data_.interact;
++         map.gs_.stage.dispatchEvent(new KeyboardEvent(KeyboardEvent.KEY_DOWN, true, false, 0, code));
++         map.gs_.stage.dispatchEvent(new KeyboardEvent(KeyboardEvent.KEY_UP, true, false, 0, code));
++         return true;
++      }
++
+       private static function onClose(event:Event) : void
+       {
+          drop();

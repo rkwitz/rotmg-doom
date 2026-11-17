@@ -1,0 +1,120 @@
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index 0a774f8..71fce18 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -139,6 +139,9 @@ package romtg
+       private static var viewSent:String = "";
+       private static var modalSent:String = "";
+       public static var dialogCentre:Number = -1;   // `dlgcx`
++      /** The dialog or popup showing over Doom, in RotMG's units, or null: HudWindow keeps its
++       *  counters and bars from drawing over it (Ryan, 2026-11-16: over the pets window). */
++      public static var modalRect:Rectangle = null;
+       private static var menuSent:String = "";
+       private static var dragSent:String = "drag 0";
+       private static var namesSent:Dictionary = new Dictionary();
+@@ -460,6 +463,7 @@ package romtg
+             if (DialogsView.instance != null) DialogsView.instance.x = 0;
+             if (PopupView.instance != null) PopupView.instance.x = 0;
+          }
++         modalRect = null;
+          if (dlg == null || dlg.stage == null)
+          {
+             return "modal 0";
+@@ -469,7 +473,8 @@ package romtg
+          {
+             return "modal 0";
+          }
+-         if (want && layer.parent != null)
++         // (The pets window centres itself on Doom's middle: PetsWindow.fit.)
++         if (want && layer.parent != null && layer != PetsWindow.current)
+          {
+             // In units: the dialog's middle to Doom's middle, kept inside the play area (0-600).
+             var dx:Number = dialogCentre - (r.x + r.width / 2);
+@@ -486,6 +491,7 @@ package romtg
+                r = inRotmgUnits(dlg);
+             }
+          }
++         modalRect = r;
+          return "modal 1 " + int(r.x) + " " + int(r.y) + " " + int(Math.ceil(r.width)) + " " + int(Math.ceil(r.height));
+       }
+ 
+diff --git a/TK-Client/src/romtg/HudWindow.as b/TK-Client/src/romtg/HudWindow.as
+index 801e82b..f5488c6 100644
+--- a/TK-Client/src/romtg/HudWindow.as
++++ b/TK-Client/src/romtg/HudWindow.as
+@@ -333,6 +333,10 @@ package romtg
+          drawMyHealth(player, w);
+          drawMyStatus(player, w, now);
+ 
++         // A dialog over Doom (the pets window, the potion storage...): what of this would draw
++         // over it hides behind it instead (Ryan, 2026-11-16: health and fame over the pets).
++         hideUnderDialog(w);
++
+          // Status texts over you (+EXP, healing...): just above your health bar at the bottom,
+          // where RotMG shows them over your character, rising and fading. Ones that came
+          // together stack upwards.
+@@ -360,6 +364,31 @@ package romtg
+       private static var statusIcons:Sprite = null;
+       private static var shownStatus:String = "";
+ 
++      /** Hides each part of the HUD that overlaps the open dialog (DoomLink.modalRect), as
++       *  RotMG's own dialogs cover its HUD; shows it again once it doesn't. */
++      private static function hideUnderDialog(w:Number) : void
++      {
++         var r:Rectangle = DoomLink.modalRect;
++         var cover:Rectangle = r != null ? new Rectangle(r.x + (w - 600), r.y, r.width, r.height) : null;
++         for each (var part:DisplayObject in [credits, myHealth, myHealthText, statusIcons, statuses, chat])
++         {
++            if (part == null)
++            {
++               continue;
++            }
++            var hidden:Boolean = false;
++            if (cover != null)
++            {
++               var was:Boolean = part.visible;
++               part.visible = true;   // (bounds of what it draws)
++               var b:Rectangle = part.getBounds(root);
++               hidden = b.width > 0 && b.height > 0 && b.intersects(cover);
++               part.visible = was;
++            }
++            part.alpha = hidden ? 0 : 1;
++         }
++      }
++
+       /** Your status effect icons (slowed, blind, healing...), as RotMG shows them over your
+        *  character (ConditionEffect.getConditionEffectIcons, the same frames), in a row over
+        *  your health bar (Ryan, 2026-11-15: status effects in Doom). */
+diff --git a/TK-Client/src/romtg/pets/PetsWindow.as b/TK-Client/src/romtg/pets/PetsWindow.as
+index 95b2cd8..38cc468 100644
+--- a/TK-Client/src/romtg/pets/PetsWindow.as
++++ b/TK-Client/src/romtg/pets/PetsWindow.as
+@@ -71,8 +71,19 @@ package romtg.pets
+          var areaH:Number = br.y - tl.y;
+          var h:Number = 60 + ROW * MAX_ROWS + 50;
+          var s:Number = Math.min(1, (areaH - 20) / h, (areaW - 20) / W);
++         var cx:Number = tl.x + areaW / 2;
++         if (DoomLink.viewing && DoomLink.dialogCentre > 0)
++         {
++            // Over Doom: in the middle of Doom's view (Ryan, 2026-11-16: it sat too far right).
++            // Doom's middle can be left of RotMG's play area's (a wide screen): RotMG's window
++            // doesn't reach further left than its own edge, so it's made smaller to fit there.
++            var perUnit:Number = areaW / 600;
++            cx = tl.x + DoomLink.dialogCentre * perUnit;
++            s = Math.min(s, 2 * (DoomLink.dialogCentre - 6) * perUnit / W);
++         }
++         s = Math.max(s, 0.3);
+          scaleX = scaleY = s;
+-         x = tl.x + (areaW - W * s) / 2;
++         x = cx - W * s / 2;
+          y = tl.y + (areaH - h * s) / 2;
+       }
+ 
+@@ -124,6 +135,7 @@ package romtg.pets
+          {
+             this.refresh();
+          }
++         this.fit();   // Doom shown or not, Doom's middle moved (a resize): kept in place
+       }
+ 
+       private function pets() : Array

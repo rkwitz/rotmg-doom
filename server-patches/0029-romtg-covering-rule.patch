@@ -1,0 +1,197 @@
+diff --git a/TK-Client/src/kabam/rotmg/maploading/view/MapLoadingView.as b/TK-Client/src/kabam/rotmg/maploading/view/MapLoadingView.as
+index 6a8e809..ef67773 100644
+--- a/TK-Client/src/kabam/rotmg/maploading/view/MapLoadingView.as
++++ b/TK-Client/src/kabam/rotmg/maploading/view/MapLoadingView.as
+@@ -35,8 +35,12 @@ package kabam.rotmg.maploading.view
+       private const minimumDisplayTimer:Timer = new Timer(MINIMUM_DISPLAY_TIME,1);
+       private var minimumTimeElapsed:Boolean;
+       
++      // ROMTG-Doom: a map is loading (a portal on the way): still "in a game" for the swapper.
++      public static var showing:MapLoadingView = null;
++
+       public function MapLoadingView()
+       {
++         showing = this;
+          this.MapLoadingSymbol = MapLoadingView_MapLoadingSymbol;
+          super();
+          this.asset = new UnpackEmbed(this.MapLoadingSymbol);
+@@ -155,6 +159,10 @@ package kabam.rotmg.maploading.view
+       
+       private function onRemovedFromStage(e:Event) : void
+       {
++         if (showing == this)
++         {
++            showing = null;
++         }
+          this.animation && this.animation.dispose();
+          this.animation = null;
+       }
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index 819fdeb..6d1891a 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -14,6 +14,8 @@ package romtg
+    import com.company.assembleegameclient.ui.menu.Menu;
+    import com.company.assembleegameclient.ui.options.Options;
+    import romtg.pets.PetsWindow;
++   import kabam.rotmg.maploading.view.MapLoadingView;
++   import flash.display.DisplayObjectContainer;
+    import io.decagames.rotmg.ui.popups.PopupView;
+    import kabam.rotmg.dialogs.view.DialogsView;
+    import flash.geom.Rectangle;
+@@ -23,6 +25,7 @@ package romtg
+    import flash.events.SecurityErrorEvent;
+    import flash.net.Socket;
+    import flash.utils.Dictionary;
++   import flash.utils.getQualifiedClassName;
+    import flash.utils.getTimer;
+    import kabam.rotmg.constants.UseType;
+    import romtg.pets.RomtgPet;
+@@ -238,18 +241,100 @@ package romtg
+          return new Rectangle((g.x - left) / unit, (g.y - top) / unit, g.width / unit, g.height / unit);
+       }
+ 
++      /** The topmost thing laid over the game that isn't a RotMG dialog or popup: something
++       *  added to the game sprite after its start, or on the overlay layer. Null if none. */
++      private static function overlayView(bigOnly:Boolean = false) : DisplayObject
++      {
++         if (map == null || map.gs_ == null || map.gs_.stage == null)
++         {
++            return null;
++         }
++         var gs:DisplayObjectContainer = map.gs_;
++         var now:int = getTimer();
++         if (baselineOf != gs)
++         {
++            baselineOf = gs;
++            baselineAt = now;
++            baseline = new Dictionary(true);
++         }
++         var i:int;
++         if (now - baselineAt < BASELINE_MS)
++         {
++            for (i = 0; i < gs.numChildren; i++)
++            {
++               baseline[gs.getChildAt(i)] = true;
++            }
++            return null;
++         }
++         var layer:DisplayObjectContainer = map.gs_.mui_ != null && map.gs_.mui_.layers != null ? map.gs_.mui_.layers.overlay : null;
++         if (layer != null)
++         {
++            for (i = layer.numChildren - 1; i >= 0; i--)
++            {
++               if (shows(layer.getChildAt(i)) && (!bigOnly || playShare(layer.getChildAt(i)) >= BIG_SHARE))
++               {
++                  return layer.getChildAt(i);
++               }
++            }
++         }
++         for (i = gs.numChildren - 1; i >= 0; i--)
++         {
++            var d:DisplayObject = gs.getChildAt(i);
++            if (baseline[d] || d == map.gs_.map || d == map.gs_.hudView || d == PetsWindow.current)
++            {
++               continue;
++            }
++            if (shows(d) && (!bigOnly || playShare(d) >= BIG_SHARE))
++            {
++               return d;
++            }
++         }
++         return null;
++      }
++
++      private static function shows(d:DisplayObject) : Boolean
++      {
++         return d != null && d.visible && d.alpha > 0.05 && d.stage != null && d.width > 4 && d.height > 4;
++      }
++
++      /** Over the game and covering much of its play area (see overlayView). */
++      private static function bigOverlay() : Boolean
++      {
++         return overlayView(true) != null;
++      }
++
++      /** How much of RotMG's play area (units 0-600 both ways) D covers, 0 to 1. */
++      private static function playShare(d:DisplayObject) : Number
++      {
++         var r:Rectangle = inRotmgUnits(d);
++         if (r == null)
++         {
++            return 0;
++         }
++         var cut:Rectangle = r.intersection(new Rectangle(0, 0, 600, 600));
++         return cut.width * cut.height / (600 * 600);
++      }
++
+       /** `modal ...` for the open dialog or popup (see the header), moved first to the middle
+        *  of Doom's view while Doom shows the game (Ryan, 2026-11-15: just the dialog, centred). */
+       private static function dialogLine() : String
+       {
+          var layer:DisplayObject = null;
+          var dlg:DisplayObject = null;
++         var extra:DisplayObject = overlayView();
+          if (PetsWindow.current != null && PetsWindow.current.stage != null)
+          {
+             // The pets window (romtg/pets) is a window of our own, not a RotMG dialog: treated as one.
+             layer = PetsWindow.current;
+             dlg = PetsWindow.current;
+          }
++         else if (extra != null && extra.parent != map.gs_ && playShare(extra) < BIG_SHARE)
++         {
++            // Something small on the overlay layer (a market dialog...): shown over Doom like a
++            // dialog. (Small things the game sprite gains later, a boss bar, the stats, aren't.)
++            layer = extra;
++            dlg = extra;
++         }
+          else if (PopupView.instance != null && PopupView.instance.openView() != null)
+          {
+             layer = PopupView.instance;
+@@ -654,7 +739,14 @@ package romtg
+       private static var watching:Boolean = false;
+       private static var ingameSent:int = -1;
+       private static var outSince:int = -1;
+-      private static const OUT_MS:int = 4000;
++      private static const OUT_MS:int = 600;
++      // The game sprite's own children (map, HUD, chat...), taken in its first BASELINE_MS:
++      // anything added later is something laid over the game (overlay).
++      private static var baselineOf:Object = null;
++      private static var baselineAt:int = 0;
++      private static var baseline:Dictionary = new Dictionary(true);
++      private static const BASELINE_MS:int = 3000;
++      private static const BIG_SHARE:Number = 0.4;   // of the play area: covers it
+ 
+       /** `ingame 1|0` when you enter a game or leave it for RotMG's menus (character select,
+        *  death screen...): the swapper brings RotMG up while you're out of a game, as nothing
+@@ -673,15 +765,25 @@ package romtg
+             ingameSent = 0;
+             outSince = getTimer() - OUT_MS;
+          }
+-         if (Options.open != optionsSent)
++         // Anything big over the play area (options, the market, any screen RotMG lays over the
++         // game) brings RotMG up while it's there; small windows show over Doom (dialogLine).
++         // One rule for every menu, not one fix per menu (Ryan, 2026-11-15).
++         var covered:Boolean = Options.open || bigOverlay();
++         if (covered != optionsSent)
+          {
+-            optionsSent = Options.open;
++            if (covered)
++            {
++               var what:DisplayObject = overlayView(true);
++               log("covering the game: " + (what != null ? getQualifiedClassName(what) : "options"));
++            }
++            optionsSent = covered;
+             send("options " + (optionsSent ? 1 : 0));
+             flush();
+          }
+-         var ingame:int = map != null && map.gs_ != null && map.gs_.stage != null ? 1 : 0;
+-         // Out only once it lasts: going through a portal, the old game goes a moment before
+-         // the new one comes (and a loading screen between).
++         var ingame:int = map != null && map.gs_ != null && map.gs_.stage != null || MapLoadingView.showing != null ? 1 : 0;
++         // Out once it lasts a moment: going through a portal, the old game goes a frame or two
++         // before the loading screen comes (which counts as in a game). Leaving for RotMG's
++         // menus (character select, the vault's character changer...) shows them at once.
+          var now:int = getTimer();
+          if (ingame == 1)
+          {

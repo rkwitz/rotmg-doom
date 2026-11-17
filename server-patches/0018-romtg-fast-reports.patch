@@ -1,0 +1,27 @@
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index c3187d4..7d1c1ec 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -67,7 +67,10 @@ package romtg
+    {
+       public static const PORT:int = 2051;
+       private static const RETRY_MS:int = 2000;
+-      private static const POS_MS:int = 15;
++      // Every frame (RotMG runs at DOOM_FPS while Doom shows the game: more, closer reports,
++      // so Doom's smoothing needs less delay; movement felt slow, 2026-11-15).
++      private static const POS_MS:int = 4;
++      private static const DOOM_FPS:int = 144;
+       private static const OBJECTS_MS:int = 40;
+       private static const PROJECTILES_MS:int = 30;
+       /** How far ahead of you an ability lands, in RotMG screen pixels (50 to a tile). */
+@@ -590,6 +593,10 @@ package romtg
+             {
+                HudWindow.show();
+             }
++            if (WebMain.STAGE != null)
++            {
++               WebMain.STAGE.frameRate = viewing ? Math.max(DOOM_FPS, Parameters.data_.fps) : Parameters.data_.fps;
++            }
+          }
+          else if (parts[0] == "hudok")
+          {

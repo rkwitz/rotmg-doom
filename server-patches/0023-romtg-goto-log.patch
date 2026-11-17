@@ -1,0 +1,14 @@
+diff --git a/TK-Client/src/com/company/assembleegameclient/objects/Player.as b/TK-Client/src/com/company/assembleegameclient/objects/Player.as
+index ad52e2e..83fc8ec 100644
+--- a/TK-Client/src/com/company/assembleegameclient/objects/Player.as
++++ b/TK-Client/src/com/company/assembleegameclient/objects/Player.as
+@@ -262,6 +262,9 @@ public class Player extends Character {
+                 var gdx:Number = DoomLink.gotoX - x_;
+                 var gdy:Number = DoomLink.gotoY - y_;
+                 var gd:Number = Math.sqrt(gdx * gdx + gdy * gdy);
++                if (gd > 3 && map_.player_ == this) {
++                    DoomLink.log("goto ignored: " + gd.toFixed(2) + " tiles away");
++                }
+                 if (gd < 0.0001 || gd > 3 || dt <= 0) {
+                     moveVec_.x = 0;   // there, or too far to be a step (a re-centre in flight)
+                     moveVec_.y = 0;

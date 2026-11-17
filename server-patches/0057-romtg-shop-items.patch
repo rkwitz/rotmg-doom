@@ -1,0 +1,52 @@
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index 399984b..42f23fa 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -4,6 +4,7 @@ package romtg
+    import com.company.assembleegameclient.map.Square;
+    import com.company.assembleegameclient.objects.BasicObject;
+    import com.company.assembleegameclient.objects.GameObject;
++   import com.company.assembleegameclient.objects.Merchant;
+    import com.company.assembleegameclient.objects.ObjectLibrary;
+    import com.company.assembleegameclient.objects.Player;
+    import com.company.assembleegameclient.objects.Projectile;
+@@ -595,7 +596,18 @@ package romtg
+       private static function looks(go:GameObject) : int
+       {
+          var pet:RomtgPet = go as RomtgPet;
+-         return pet != null && pet.skinType > 0 ? pet.skinType : go.objectType_;
++         if (pet != null && pet.skinType > 0)
++         {
++            return pet.skinType;
++         }
++         // A shop stall (the Nexus's...): RotMG draws the item it sells, not the stall (Merchant
++         // getTexture); Doom too (Ryan, 2026-11-16).
++         var shop:Merchant = go as Merchant;
++         if (shop != null && shop.merchandiseType_ > 0)
++         {
++            return shop.merchandiseType_;
++         }
++         return go.objectType_;
+       }
+ 
+       /** " HP MAX" for an enemy, "" for anything else. */
+@@ -737,14 +749,15 @@ package romtg
+             var go:GameObject;
+             for each (go in map.goDict_)
+             {
+-               if (go.props_ == null || go.props_.static_ || go == player)
++               // Its look comes after it appears (a pet's skin, the item a shop stall sells): show
++               // it again with it. (Stalls are static: checked before those are left out.)
++               if ((go is RomtgPet || go is Merchant) && petSkins[go.objectId_] != looks(go))
+                {
++                  added(go);
+                   continue;
+                }
+-               // A pet's look comes after it appears (its skin stat): show it again with it.
+-               if (go is RomtgPet && petSkins[go.objectId_] != looks(go))
++               if (go.props_ == null || go.props_.static_ || go == player)
+                {
+-                  added(go);
+                   continue;
+                }
+                // A boss (or anything) changing its look (its AltTexture, Ryan 2026-11-16): Doom too.

@@ -1,0 +1,66 @@
+diff --git a/TK-Client/src/com/company/assembleegameclient/objects/Player.as b/TK-Client/src/com/company/assembleegameclient/objects/Player.as
+index dbcbd97..71e0faa 100644
+--- a/TK-Client/src/com/company/assembleegameclient/objects/Player.as
++++ b/TK-Client/src/com/company/assembleegameclient/objects/Player.as
+@@ -311,7 +311,9 @@ public class Player extends Character {
+                 moveVec_.x = 0;
+                 moveVec_.y = 0;
+             }
+-            if (square_ != null && square_.props_.push_) {
++            // ROMTG-Doom: walking Doom's path, the conveyor's push is in it already (Doom pushes
++            // you, DoomLink `push`): not pushed twice.
++            if (square_ != null && square_.props_.push_ && !(doomWalks && DoomLink.hasGoto)) {
+                 moveVec_.x = moveVec_.x - square_.props_.animate_.dx_ / 1000;
+                 moveVec_.y = moveVec_.y - square_.props_.animate_.dy_ / 1000;
+             }
+@@ -992,6 +994,15 @@ public class Player extends Character {
+     }
+ 
+     /** ROMTG-Doom: your walking speed now, tiles a second, for Doom to walk you at (DoomLink). */
++    /** ROMTG-Doom: the push of the conveyor under you, tiles a second (0 0 off one), as
++     *  update() pushes you (the ground's animation, opposite its scroll). */
++    public function doomPush():String {
++        if (square_ == null || !square_.props_.push_ || square_.props_.animate_ == null) {
++            return "0 0";
++        }
++        return (-square_.props_.animate_.dx_).toFixed(3) + " " + (-square_.props_.animate_.dy_).toFixed(3);
++    }
++
+     public function doomSpeed():Number {
+         return isParalyzed() || isPetrified() ? 0 : this.getMoveSpeed() * 1000;
+     }
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index b78fc22..8dc864d 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -115,6 +115,7 @@ package romtg
+       // Doom's path for you since you last caught up: its places in order (Player follows them).
+       public static var gotoPath:Array = [];
+       private static var speedSent:String = "";
++      private static var pushSent:String = "";
+       private static var gridSent:String = "";
+       private static var gridAt:int = 0;
+       private static const GRID_R:int = 3;
+@@ -160,7 +161,7 @@ package romtg
+          seen = new Dictionary();
+          seenShots = new Dictionary();
+          send("map " + clean(m.name_) + " " + m.width_ + " " + m.height_);
+-         speedSent = gridSent = "";   // a new map: the bridge forgot them; say them again
++         speedSent = gridSent = pushSent = "";   // a new map: the bridge forgot them; say them again
+          namesSent = new Dictionary();   // and the name tags (object ids repeat from map to map:
+          healingSent = new Dictionary(); // a name not sent again never showed, Ryan 2026-11-15)
+       }
+@@ -492,6 +493,13 @@ package romtg
+             speedSent = spd;
+             send(spd);
+          }
++         // Conveyors (Sprite World's belts...): Doom pushes you as RotMG does.
++         var push:String = "push " + player.doomPush();
++         if (push != pushSent)
++         {
++            pushSent = push;
++            send(push);
++         }
+          var cx:int = int(player.x_), cy:int = int(player.y_);
+          if (now - gridAt < GRID_MS && gridSent.indexOf("grid " + cx + " " + cy + " ") == 0)
+          {

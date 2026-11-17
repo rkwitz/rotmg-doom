@@ -1,0 +1,42 @@
+diff --git a/TK-Client/src/kabam/rotmg/death/control/HandleDeathCommand.as b/TK-Client/src/kabam/rotmg/death/control/HandleDeathCommand.as
+index d8c6f21..8bd456e 100644
+--- a/TK-Client/src/kabam/rotmg/death/control/HandleDeathCommand.as
++++ b/TK-Client/src/kabam/rotmg/death/control/HandleDeathCommand.as
+@@ -1,5 +1,6 @@
+ package kabam.rotmg.death.control
+ {
++   import romtg.DoomLink;
+    import kabam.rotmg.core.model.PlayerModel;
+    import kabam.rotmg.death.model.DeathModel;
+    import kabam.rotmg.dialogs.control.CloseDialogsSignal;
+@@ -32,6 +33,8 @@ package kabam.rotmg.death.control
+       
+       public function execute() : void
+       {
++         // ROMTG-Doom: you died: RotMG (its death screen) comes up over Doom at once.
++         DoomLink.died();
+          this.closeDialogs.dispatch();
+          if(this.isDeathPending())
+          {
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index 57cd6e6..908dd9e 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -357,6 +357,17 @@ package romtg
+          return cut.width * cut.height / (600 * 600);
+       }
+ 
++      /** You died: RotMG's death screen comes up at once (the swapper leaves Doom, as "back to
++       *  home" does). It showed in Doom's corner view for seconds while Doom stood frozen,
++       *  then Doom even came back over it (Ryan, 2026-11-15). */
++      public static function died() : void
++      {
++         send("home");
++         flush();
++         ingameSent = 0;
++         outSince = getTimer() - OUT_MS;
++      }
++
+       /** An effect the server shows (ShowEffect: heal, teleport, stream, throw, nova, poison,
+        *  line, burst, flow, ring, lightning, collapse, cone blast, jitter, flash, thrown
+        *  projectile), for Doom to draw too: `efx TYPE TARGET X1 Y1 X2 Y2 RGB SECONDS`

@@ -1,0 +1,436 @@
+diff --git a/TK-Client/src/kabam/rotmg/assets/EmbeddedData_ObjectsCXML.xml b/TK-Client/src/kabam/rotmg/assets/EmbeddedData_ObjectsCXML.xml
+index 00becdf..b72f8b9 100644
+--- a/TK-Client/src/kabam/rotmg/assets/EmbeddedData_ObjectsCXML.xml
++++ b/TK-Client/src/kabam/rotmg/assets/EmbeddedData_ObjectsCXML.xml
+@@ -10496,7 +10496,7 @@
+     </Projectile>
+   </Object>
+   <Object type="0x0d78" id="Talisman King's Golden Guardian Right">
+-    <DisplayId>Golden Guardian</DisplayId>
++    <DisplayId>Oryx Stone Guardian</DisplayId>
+     <Group>Oryx Minions</Group>
+     <Enemy />
+     <Class>Character</Class>
+@@ -10869,6 +10869,7 @@
+     </Projectile>
+   </Object>
+   <Object type="0x5005" id="Talisman King's Golden Guardian Left Statue">
++    <DisplayId>Oryx Stone Guardian</DisplayId>
+     <Class>Character</Class>
+     <AnimatedTexture>
+       <File>chars16x16dEncounters2</File>
+@@ -10882,6 +10883,7 @@
+     <Invincible />
+   </Object>
+   <Object type="0x5006" id="Talisman King's Golden Guardian Right Statue">
++    <DisplayId>Oryx Stone Guardian</DisplayId>
+     <Class>Character</Class>
+     <AnimatedTexture>
+       <File>chars16x16dEncounters</File>
+@@ -11937,7 +11939,7 @@
+     <Defense>40</Defense>
+   </Object>
+   <Object type="0x0d79" id="Talisman King's Golden Guardian Left">
+-    <DisplayId>Golden Guardian</DisplayId>
++    <DisplayId>Oryx Stone Guardian</DisplayId>
+     <Group>Oryx Minions</Group>
+     <Enemy />
+     <Class>Character</Class>
+@@ -45451,7 +45453,7 @@
+       <Index>0x36</Index>
+     </Texture>
+     <SlotType>10</SlotType>
+-    <Description>Open and discover the mysteries of the Talisman King.</Description>
++    <Description>Open and discover the mysteries of Oryx the Mad God.</Description>
+     <Sound>use_potion</Sound>
+     <InvUse />
+     <Potion />
+diff --git a/TK-Server/TKR.Shared/resources/xml/TK_Worlds.xml b/TK-Server/TKR.Shared/resources/xml/TK_Worlds.xml
+index 1bf5613..c433574 100644
+--- a/TK-Server/TKR.Shared/resources/xml/TK_Worlds.xml
++++ b/TK-Server/TKR.Shared/resources/xml/TK_Worlds.xml
+@@ -91,13 +91,6 @@
+ 		<VisibilityType>1</VisibilityType>
+ 		<Dungeon/>
+ 	</World>
+-	<World id="Hideout of Septavius">
+-		<Width>256</Width>
+-		<Height>256</Height>
+-		<MapJM>undead_lair/undead_Lair_epic.jm</MapJM>
+-		<VisibilityType>1</VisibilityType>
+-		<Dungeon/>
+-	</World>
+ 	<World id="Wine Cellar">
+ 		<Width>256</Width>
+ 		<Height>256</Height>
+@@ -106,13 +99,6 @@
+ 		<Dungeon/>
+ 		<DisableTeleport/>
+ 	</World>
+-	<World id="Hideout of Malphas">
+-		<Width>256</Width>
+-		<Height>256</Height>
+-		<MapJM>abyss/abyss_epic.jm</MapJM>
+-		<VisibilityType>1</VisibilityType>
+-		<Dungeon/>
+-	</World>
+ 	<World id="Abyss of Demons">
+ 		<Width>256</Width>
+ 		<Height>256</Height>
+@@ -120,12 +106,6 @@
+ 		<VisibilityType>1</VisibilityType>
+ 		<Dungeon/>
+ 	</World>
+-	<World id="Belladonna's Garden">
+-		<Width>256</Width>
+-		<Height>256</Height>
+-		<MapJM>belladonna.jm</MapJM>
+-		<Dungeon/>
+-	</World>
+ 	<World id="Defiled Graveyard">
+ 		<Width>256</Width>
+ 		<Height>256</Height>
+@@ -146,13 +126,6 @@
+ 		<MapJM>candy_land_hunting_grounds.jm</MapJM>
+ 		<Dungeon/>
+ 	</World>
+-	<World id="Cloth Bazaar">
+-		<Width>256</Width>
+-		<Height>256</Height>
+-		<MapJM>cloth_bazaar.jm</MapJM>
+-		<Dungeon/>
+-		<Persists/>
+-	</World>
+ 	<World id="Oryx's Castle">
+ 		<Width>256</Width>
+ 		<Height>256</Height>
+@@ -168,26 +141,6 @@
+ 		<VisibilityType>1</VisibilityType>
+ 		<Dungeon/>
+ 	</World>
+-	<World id="Garden of Horror">
+-		<Width>256</Width>
+-		<Height>256</Height>
+-		<MapJM>garden_of_horror.jm</MapJM>
+-		<VisibilityType>1</VisibilityType>
+-		<Dungeon/>
+-	</World>
+-	<World id="The Ivory Wyvern">
+-		<Width>256</Width>
+-		<Height>256</Height>
+-		<MapJM>the_ivory_wyvern.jm</MapJM>
+-		<Dungeon/>
+-	</World>
+-	<World id="Forbidden Jungle">
+-		<Width>256</Width>
+-		<Height>256</Height>
+-		<MapJM>forbidden_jungle.jm</MapJM>
+-		<VisibilityType>1</VisibilityType>
+-		<Dungeon/>
+-	</World>
+ 	<World id="Puppet Master's Encore">
+ 		<Width>256</Width>
+ 		<Height>256</Height>
+@@ -209,27 +162,6 @@
+ 		<VisibilityType>1</VisibilityType>
+ 		<Dungeon/>
+ 	</World>
+-	<World id="Hideout of Stheno">
+-		<Width>256</Width>
+-		<Height>256</Height>
+-		<MapJM>hideout_of_stheno.jm</MapJM>
+-		<VisibilityType>2</VisibilityType>
+-		<Dungeon/>
+-	</World>
+-	<World id="Hideout of Thessal">
+-		<Width>256</Width>
+-		<Height>256</Height>
+-		<MapJM>hideout_of_thessal.jm</MapJM>
+-		<VisibilityType>2</VisibilityType>
+-		<Dungeon/>
+-	</World>
+-	<World id="Hideout of Limon">
+-		<Width>256</Width>
+-		<Height>256</Height>
+-		<MapJM>hideout_of_limon.jm</MapJM>
+-		<VisibilityType>2</VisibilityType>
+-		<Dungeon/>
+-	</World>
+ 	<World id="Puppet Master's Theatre">
+ 		<Width>256</Width>
+ 		<Height>256</Height>
+@@ -237,20 +169,6 @@
+ 		<VisibilityType>2</VisibilityType>
+ 		<Dungeon/>
+ 	</World>
+-	<World id="Haunted Cemetery">
+-		<Width>256</Width>
+-		<Height>256</Height>
+-		<MapJM>haunted_cemetery.jm</MapJM>
+-		<VisibilityType>2</VisibilityType>
+-		<Dungeon/>
+-	</World>
+-	<World id="Lost Halls">
+-		<Width>256</Width>
+-		<Height>256</Height>
+-		<MapJM>lost_halls.jm</MapJM>
+-		<VisibilityType>1</VisibilityType>
+-		<Dungeon/>
+-	</World>
+ 	<World id="Marketplace">
+ 		<Width>256</Width>
+ 		<Height>256</Height>
+@@ -321,14 +239,6 @@
+ 		<VisibilityType>2</VisibilityType>
+ 		<Dungeon/>
+ 	</World>
+-	<World id="Cave of Eternal Frost">
+-		<Width>256</Width>
+-		<Height>256</Height>
+-		<MapJM>cave_of_eternal_frost.jm</MapJM>
+-		<DisableTeleport/>
+-		<VisibilityType>2</VisibilityType>
+-		<Dungeon/>
+-	</World>
+ 	<World id="Spider Den">
+ 		<Width>256</Width>
+ 		<Height>256</Height>
+@@ -343,13 +253,6 @@
+ 		<Dungeon/>
+ 		<VisibilityType>1</VisibilityType>
+ 	</World>
+-	<World id="Stanleys Hideout">
+-		<Width>256</Width>
+-		<Height>256</Height>
+-		<MapJM>stanleys_hideout.jm</MapJM>
+-		<VisibilityType>2</VisibilityType>
+-		<Dungeon/>
+-	</World>
+ 	<World id="Sprite World">
+ 		<Width>256</Width>
+ 		<Height>256</Height>
+@@ -360,17 +263,45 @@
+ 		<MapJM>sprite_world/sprite_world5.jm</MapJM>
+ 		<Dungeon/>
+ 	</World>
+-	<World id="Strange Library">
++	<World id="Woodland Labyrinth">
+ 		<Width>256</Width>
+ 		<Height>256</Height>
+-		<MapJM>strange_library.jm</MapJM>
++		<MapJM>woodland_labyrinth.jm</MapJM>
+ 		<VisibilityType>1</VisibilityType>
+ 		<Dungeon/>
+ 	</World>
+-	<World id="Woodland Labyrinth">
++	<World id="Hideout of Septavius">
+ 		<Width>256</Width>
+ 		<Height>256</Height>
+-		<MapJM>woodland_labyrinth.jm</MapJM>
++		<MapJM>undead_lair/undead_Lair_epic.jm</MapJM>
++		<VisibilityType>1</VisibilityType>
++		<Dungeon/>
++	</World>
++	<World id="Hideout of Malphas">
++		<Width>256</Width>
++		<Height>256</Height>
++		<MapJM>abyss/abyss_epic.jm</MapJM>
++		<VisibilityType>1</VisibilityType>
++		<Dungeon/>
++	</World>
++	<World id="Hideout of Stheno">
++		<Width>256</Width>
++		<Height>256</Height>
++		<MapJM>hideout_of_stheno.jm</MapJM>
++		<VisibilityType>2</VisibilityType>
++		<Dungeon/>
++	</World>
++	<World id="Hideout of Thessal">
++		<Width>256</Width>
++		<Height>256</Height>
++		<MapJM>hideout_of_thessal.jm</MapJM>
++		<VisibilityType>2</VisibilityType>
++		<Dungeon/>
++	</World>
++	<World id="Garden of Horror">
++		<Width>256</Width>
++		<Height>256</Height>
++		<MapJM>garden_of_horror.jm</MapJM>
+ 		<VisibilityType>1</VisibilityType>
+ 		<Dungeon/>
+ 	</World>
+@@ -382,4 +313,26 @@
+ 		<CreateInstance/>
+ 		<Dungeon/>
+ 	</World>
++	<World id="Stanleys Hideout">
++		<Width>256</Width>
++		<Height>256</Height>
++		<MapJM>stanleys_hideout.jm</MapJM>
++		<VisibilityType>2</VisibilityType>
++		<Dungeon/>
++	</World>
++	<World id="Strange Library">
++		<Width>256</Width>
++		<Height>256</Height>
++		<MapJM>strange_library.jm</MapJM>
++		<VisibilityType>1</VisibilityType>
++		<Dungeon/>
++	</World>
++	<World id="Cave of Eternal Frost">
++		<Width>256</Width>
++		<Height>256</Height>
++		<MapJM>cave_of_eternal_frost.jm</MapJM>
++		<DisableTeleport/>
++		<VisibilityType>2</VisibilityType>
++		<Dungeon/>
++	</World>
+ </Worlds>
+\ No newline at end of file
+diff --git a/TK-Server/TKR.Shared/resources/xml/characters/TK_Characters_chars16x16dEncounters.xml b/TK-Server/TKR.Shared/resources/xml/characters/TK_Characters_chars16x16dEncounters.xml
+index 4cc45e0..7c0500f 100644
+--- a/TK-Server/TKR.Shared/resources/xml/characters/TK_Characters_chars16x16dEncounters.xml
++++ b/TK-Server/TKR.Shared/resources/xml/characters/TK_Characters_chars16x16dEncounters.xml
+@@ -395,7 +395,7 @@
+     </Projectile>
+   </Object>
+   <Object type="0x0d78" id="Talisman King's Golden Guardian Right">
+-    <DisplayId>Golden Guardian</DisplayId>
++    <DisplayId>Oryx Stone Guardian</DisplayId>
+     <Group>Oryx Minions</Group>
+     <Enemy />
+     <Class>Character</Class>
+diff --git a/TK-Server/TKR.Shared/resources/xml/characters/TK_Characters_chars16x16dEncounters2.xml b/TK-Server/TKR.Shared/resources/xml/characters/TK_Characters_chars16x16dEncounters2.xml
+index 09bbfb9..72848f7 100644
+--- a/TK-Server/TKR.Shared/resources/xml/characters/TK_Characters_chars16x16dEncounters2.xml
++++ b/TK-Server/TKR.Shared/resources/xml/characters/TK_Characters_chars16x16dEncounters2.xml
+@@ -1,5 +1,6 @@
+ <Objects>
+   <Object type="0x5005" id="Talisman King's Golden Guardian Left Statue">
++    <DisplayId>Oryx Stone Guardian</DisplayId>
+     <Class>Character</Class>
+     <AnimatedTexture>
+       <File>chars16x16dEncounters2</File>
+@@ -14,6 +15,7 @@
+   </Object>
+ 	
+   <Object type="0x5006" id="Talisman King's Golden Guardian Right Statue">
++    <DisplayId>Oryx Stone Guardian</DisplayId>
+     <Class>Character</Class>
+     <AnimatedTexture>
+       <File>chars16x16dEncounters</File>
+@@ -1088,7 +1090,7 @@
+     <Defense>40</Defense>
+   </Object>
+   <Object type="0x0d79" id="Talisman King's Golden Guardian Left">
+-    <DisplayId>Golden Guardian</DisplayId>
++    <DisplayId>Oryx Stone Guardian</DisplayId>
+     <Group>Oryx Minions</Group>
+     <Enemy />
+     <Class>Character</Class>
+diff --git a/TK-Server/TKR.Shared/resources/xml/equipments/TK_Equipments_Any_Regular.xml b/TK-Server/TKR.Shared/resources/xml/equipments/TK_Equipments_Any_Regular.xml
+index a1c1057..d51ca75 100644
+--- a/TK-Server/TKR.Shared/resources/xml/equipments/TK_Equipments_Any_Regular.xml
++++ b/TK-Server/TKR.Shared/resources/xml/equipments/TK_Equipments_Any_Regular.xml
+@@ -38,7 +38,7 @@
+ 			<Index>0x36</Index>
+ 		</Texture>
+ 		<SlotType>10</SlotType>
+-		<Description>Open and discover the mysteries of the Talisman King.</Description>
++		<Description>Open and discover the mysteries of Oryx the Mad God.</Description>
+ 		<Sound>use_potion</Sound>
+ 		<InvUse />
+ 		<Potion />
+diff --git a/TK-Server/TKR.WorldServer/core/worlds/World.cs b/TK-Server/TKR.WorldServer/core/worlds/World.cs
+index ee82939..59272a8 100644
+--- a/TK-Server/TKR.WorldServer/core/worlds/World.cs
++++ b/TK-Server/TKR.WorldServer/core/worlds/World.cs
+@@ -289,8 +289,20 @@ namespace TKR.WorldServer.core.worlds
+ 
+         public bool IsPlayersMax() => Players.Count >= MaxPlayers;
+ 
++        /// <summary>ROMTG-Doom: dungeons taken out (2026-11-13): the half-built ones (RotMG dungeons
++        /// TK only stubbed, and two empty TK ones). TK's own working dungeons stay (Ryan). Their
++        /// portals never appear.</summary>
++        public static readonly System.Collections.Generic.HashSet<string> RemovedDungeons = new System.Collections.Generic.HashSet<string>
++        {
++            "Forbidden Jungle", "Lost Halls", "The Ivory Wyvern", "Belladonna's Garden", "Haunted Cemetery",
++            "Hideout of Limon", "Cloth Bazaar",
++        };
++
+         public void EnterWorld(Entity entity)
+         {
++            if (entity is Portal removedPortal && removedPortal.PortalDescr?.DungeonName != null
++                && RemovedDungeons.Contains(removedPortal.PortalDescr.DungeonName))
++                return;
+             if (entity.Id == -1)
+                 entity.Id = GetNextEntityId();
+             if(entity.World == null)
+diff --git a/TK-Server/TKR.WorldServer/logic/db/BehaviorDb.RomtgLab.cs b/TK-Server/TKR.WorldServer/logic/db/BehaviorDb.RomtgLab.cs
+new file mode 100644
+index 0000000..514c6a8
+--- /dev/null
++++ b/TK-Server/TKR.WorldServer/logic/db/BehaviorDb.RomtgLab.cs
+@@ -0,0 +1,62 @@
++using TKR.Shared.resources;
++using TKR.WorldServer.logic.behaviors;
++using TKR.WorldServer.logic.transitions;
++
++// ROMTG-Doom: the two Mad Lab enemies TK had no AI for, ported from alloy-server
++// (github.com/Zolmex/alloy-server, MIT, GameServer/.../BehaviorLib.MadLab.cs), into TK's
++// behaviour language. Mad Lab's full-size layout comes from alloy too (scripts/dungeons.py).
++// Projectiles are the Horrific Creation's own, from its XML: 1 Wave, 4 Energy, 5 Shockwave,
++// 6 Blast.
++namespace TKR.WorldServer.logic
++{
++    partial class BehaviorDb
++    {
++        private _ RomtgLab = () => Behav()
++        .Init("Horrific Creation",
++            new State(
++                new DropPortalOnDeath("Realm Portal", 1.0),
++                new State("wait",
++                    new ConditionEffectBehavior(ConditionEffectIndex.Invulnerable, true),
++                    new TimedTransition(2000, "taunt")
++                    ),
++                new State("taunt",
++                    new ConditionEffectBehavior(ConditionEffectIndex.Invulnerable, true),
++                    new Taunt("Terrible... no more... Only HORROR remains!"),
++                    new TimedTransition(2000, "jump")
++                    ),
++                new State("jump",
++                    new ConditionEffectBehavior(ConditionEffectIndex.Invulnerable, false, 2000),
++                    new Charge(2, 15, coolDown: 3000),
++                    new TimedTransition(1000, "p1")
++                    ),
++                new State("p1",
++                    new Taunt("RAHHHHHHH!"),
++                    // a ring of shockwaves as it lands
++                    new Shoot(15, count: 20, shootAngle: 18, projectileIndex: 5, coolDown: 100000, coolDownOffset: 100),
++                    new TimedTransition(1500, "p2")
++                    ),
++                new State("p2",
++                    new Prioritize(
++                        new Follow(0.6, 20, 3),
++                        new Wander(0.5)
++                        ),
++                    new Shoot(15, count: 5, shootAngle: 15, projectileIndex: 6, coolDown: 1000, coolDownOffset: 500),
++                    new Shoot(15, count: 10, shootAngle: 36, projectileIndex: 1, coolDown: 1500, coolDownOffset: 1000),
++                    new Shoot(15, count: 20, shootAngle: 18, projectileIndex: 4, coolDown: 5000, coolDownOffset: 3000),
++                    new TimedRandomTransition(8000, false, "jump", "p2")
++                    )
++                )
++            )
++        .Init("Mad Gas Controller",
++            new State(
++                new ConditionEffectBehavior(ConditionEffectIndex.Invincible, true),
++                new State("wait",
++                    new TimedTransition(20000, "gone")
++                    ),
++                new State("gone",
++                    new Suicide()
++                    )
++                )
++            );
++    }
++}

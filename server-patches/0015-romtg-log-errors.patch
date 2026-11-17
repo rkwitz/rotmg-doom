@@ -1,0 +1,30 @@
+diff --git a/TK-Client/src/kabam/rotmg/errors/control/LogErrorCommand.as b/TK-Client/src/kabam/rotmg/errors/control/LogErrorCommand.as
+index 57f9338..ae6d6bf 100644
+--- a/TK-Client/src/kabam/rotmg/errors/control/LogErrorCommand.as
++++ b/TK-Client/src/kabam/rotmg/errors/control/LogErrorCommand.as
+@@ -2,6 +2,7 @@ package kabam.rotmg.errors.control
+ {
+    import flash.events.ErrorEvent;
+    import robotlegs.bender.framework.api.ILogger;
++   import romtg.DoomLink;
+    
+    public class LogErrorCommand
+    {
+@@ -20,6 +21,17 @@ package kabam.rotmg.errors.control
+       
+       public function execute() : void
+       {
++         // ROMTG-Doom: errors also go to logs/bridge.log, with the stack, so they can be read
++         // afterwards (the potion storage's error, 2026-11-15).
++         DoomLink.log("ERROR " + this.event.text);
++         if (this.event["error"] && this.event["error"] is Error)
++         {
++            var lines:Array = String(Error(this.event["error"]).getStackTrace()).split(String.fromCharCode(10));
++            for (var i:int = 0; i < lines.length && i < 12; i++)
++            {
++               DoomLink.log("  " + lines[i]);
++            }
++         }
+          this.logger.error(this.event.text);
+          if(this.event["error"] && this.event["error"] is Error)
+          {

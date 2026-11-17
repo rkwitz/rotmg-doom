@@ -1,0 +1,17 @@
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index b136cc6..ca835d3 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -1145,8 +1145,11 @@ package romtg
+             return false;
+          }
+          var code:uint = Parameters.data_.interact;
++         // Key down only: panels act on it. The key's release opens RotMG's chat when the
++         // interact key is also the chat key (Enter), and an open chat line makes every panel
++         // ignore the next press: Enter from Doom worked every other time (Ryan, 2026-11-15).
+          map.gs_.stage.dispatchEvent(new KeyboardEvent(KeyboardEvent.KEY_DOWN, true, false, 0, code));
+-         map.gs_.stage.dispatchEvent(new KeyboardEvent(KeyboardEvent.KEY_UP, true, false, 0, code));
++         TextBox.cancelInput();
+          return true;
+       }
+ 

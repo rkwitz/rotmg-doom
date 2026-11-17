@@ -1,0 +1,11 @@
+RotMG x Doom (ROMTG-Doom)
+Copyright 2026 ROMTG-Doom contributors
+
+This project is designed to run alongside, and patches, software it does not include:
+- A Doom source port (UZDoom, GPL-3.0), downloaded by setup into port/.
+- An open-source Realm of the Mad God private server, downloaded by setup into server/.
+Their licenses ship with their source after setup.
+
+No game code or assets are included. Realm of the Mad God is (c) DECA Games. DOOM is
+(c) id Software. Unofficial fan project for offline, local play only, not affiliated with
+either. Never connect modded clients to official RotMG servers.

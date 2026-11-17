@@ -1,0 +1,104 @@
+diff --git a/TK-Client/src/com/company/assembleegameclient/ui/options/Options.as b/TK-Client/src/com/company/assembleegameclient/ui/options/Options.as
+index 166b904..ed1dcb2 100644
+--- a/TK-Client/src/com/company/assembleegameclient/ui/options/Options.as
++++ b/TK-Client/src/com/company/assembleegameclient/ui/options/Options.as
+@@ -72,6 +72,11 @@ public class Options extends Sprite
+    private var options_:Vector.<Sprite>;
+    private var optionIndex_:int = 0;
+ 
++   // ROMTG-Doom: for romtg.DoomLink: the options screen is up (the swapper shows RotMG for it),
++   // and "back to home" was clicked (back to RotMG for good, out of Doom).
++   public static var open:Boolean = false;
++   public static var homeClicked:Boolean = false;
++
+    public function Options(gs:GameSprite)
+    {
+       var tab:OptionsTabTitle = null;
+@@ -183,6 +188,7 @@ public class Options extends Sprite
+ 
+    private function onHomeClick(event:MouseEvent) : void
+    {
++      homeClicked = true;
+       this.close();
+       this.gs_.closed.dispatch();
+    }
+@@ -233,6 +239,7 @@ public class Options extends Sprite
+ 
+    private function onAddedToStage(event:Event) : void
+    {
++      open = true;
+       /*this.continueButton_.x = stage.stageWidth / 2 - this.continueButton_.width / 2;
+       this.continueButton_.y = 520;
+       this.resetToDefaultsButton_.x = 20;
+@@ -246,6 +253,7 @@ public class Options extends Sprite
+ 
+    private function onRemovedFromStage(event:Event) : void
+    {
++      open = false;
+       stage.removeEventListener(KeyboardEvent.KEY_DOWN,this.onKeyDown,false);
+       stage.removeEventListener(KeyboardEvent.KEY_UP,this.onKeyUp,false);
+    }
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index 3935a89..4cd1047 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -12,6 +12,7 @@ package romtg
+    import flash.events.Event;
+    import flash.geom.Point;
+    import com.company.assembleegameclient.ui.menu.Menu;
++   import com.company.assembleegameclient.ui.options.Options;
+    import io.decagames.rotmg.ui.popups.PopupView;
+    import kabam.rotmg.dialogs.view.DialogsView;
+    import flash.geom.Rectangle;
+@@ -48,6 +49,8 @@ package romtg
+     *   tip X Y W H | tip -   a tooltip is showing at X Y W H (RotMG stage units), or none
+     *   menu X Y W H | menu - a menu (teleport, player...) is open at X Y W H (800x600 units), or
+     *                         none: the swapper shows it over Doom with the side panel
++    *   options 1|0           RotMG's options screen opened or closed (the swapper shows RotMG)
++    *   home                  "back to home" clicked: leave Doom for RotMG's menus
+     *   ingame 1|0            you are in a game, or out in RotMG's menus (the swapper shows RotMG)
+     *   modal 1 X Y W H | modal 0   a dialog or popup (potion storage...) is open at X Y W H
+     *                         (800x600 units), or none: the swapper shows just it (and the side
+@@ -649,8 +652,26 @@ package romtg
+       /** `ingame 1|0` when you enter a game or leave it for RotMG's menus (character select,
+        *  death screen...): the swapper brings RotMG up while you're out of a game, as nothing
+        *  in Doom works then (Ryan, 2026-11-15: backing out of the game in Doom was broken). */
++      private static var optionsSent:Boolean = false;
++
+       private static function watchGame(event:Event) : void
+       {
++         // The options screen (Esc, or the side panel's wrench) covers the play area, behind
++         // Doom: the swapper shows RotMG while it's up. "Back to home" leaves Doom for RotMG's
++         // menus at once (Ryan, 2026-11-15).
++         if (Options.homeClicked)
++         {
++            Options.homeClicked = false;
++            send("home");
++            ingameSent = 0;
++            outSince = getTimer() - OUT_MS;
++         }
++         if (Options.open != optionsSent)
++         {
++            optionsSent = Options.open;
++            send("options " + (optionsSent ? 1 : 0));
++            flush();
++         }
+          var ingame:int = map != null && map.gs_ != null && map.gs_.stage != null ? 1 : 0;
+          // Out only once it lasts: going through a portal, the old game goes a moment before
+          // the new one comes (and a loading screen between).
+@@ -816,6 +837,15 @@ package romtg
+          {
+             return;
+          }
++         if (name == "options")
++         {
++            // Esc in Doom: RotMG's options screen (the swapper shows RotMG for it).
++            if (!Options.open && map.gs_ != null)
++            {
++               map.gs_.addChild(new Options(map.gs_));
++            }
++            return;
++         }
+          if (name == "useSpecial")
+          {
+             var screen:Number = aim - Parameters.data_.cameraAngle;

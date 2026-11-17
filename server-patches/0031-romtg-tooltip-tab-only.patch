@@ -1,0 +1,16 @@
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index 1a48581..826d70a 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -454,7 +454,10 @@ package romtg
+       public static function tooltip(tip:Object, showing:Boolean) : void
+       {
+          var r:Rectangle = showing && tip != null && tip.stage != null ? inRotmgUnits(tip as DisplayObject) : null;
+-         HudWindow.tooltip(tip as DisplayObject, showing && viewing && r != null, r);
++         // Only while the side panel has the mouse (Tab): back in Doom, RotMG's tooltip stays
++         // up (it never sees the mouse leave) and kept re-showing the copy over Doom (Ryan,
++         // 2026-11-15).
++         HudWindow.tooltip(tip as DisplayObject, showing && viewing && !controlling && r != null, r);
+          var line:String = "tip -";
+          if (r != null)
+          {

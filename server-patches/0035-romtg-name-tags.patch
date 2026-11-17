@@ -1,0 +1,41 @@
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index 1bbc079..723f558 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -52,6 +52,7 @@ package romtg
+     *   quest ID X Y HP MAX NAME | quest -1   the quest (boss) RotMG points you to, or none
+     *   cash CREDITS FAME     your gold and fame
+     *   j ID TYPE X Y SIZE MINE [RGB MS INTENSITY]   a shot (with its particle trail)
++    *   nm OID RGB NAME       another player's name tag and its colour
+     *   tip X Y W H | tip -   a tooltip is showing at X Y W H (RotMG stage units), or none
+     *   menu X Y W H | menu - a menu (teleport, player...) is open at X Y W H (800x600 units), or
+     *                         none: the swapper shows it over Doom with the side panel
+@@ -128,6 +129,7 @@ package romtg
+       private static var modalSent:String = "";
+       public static var dialogCentre:Number = -1;   // `dlgcx`
+       private static var menuSent:String = "";
++      private static var namesSent:Dictionary = new Dictionary();   // object id: "RGB NAME" sent
+       private static var dialogShifted:Boolean = false;
+       private static var posAt:int = 0;
+       private static var objectsAt:int = 0;
+@@ -627,6 +629,20 @@ package romtg
+                   added(go);
+                   continue;
+                }
++               // Other players' name tags, coloured as RotMG colours them (Player's
++               // generateNameBitmapData): party pink, guild green, chosen name yellow, else white.
++               var other:Player = go as Player;
++               if (other != null && other.name_ != null && other.name_.length > 0)
++               {
++                  var tag:String = (other.isPartyMember_ ? Parameters.PARTY_MEMBER_COLOR : other.isFellowGuild_
++                     ? Parameters.FELLOW_GUILD_COLOR : other.nameChosen_ ? Parameters.NAME_CHOSEN_COLOR : 0xFFFFFF).toString(16)
++                     + " " + oneLine(other.name_).split(" ").join("_");
++                  if (namesSent[go.objectId_] != tag)
++                  {
++                     namesSent[go.objectId_] = tag;
++                     send("nm " + go.objectId_ + " " + tag);
++                  }
++               }
+                var at:String = fix(go.x_) + " " + fix(go.y_) + health(go);
+                if (seen[go.objectId_] != at)
+                {

@@ -1,0 +1,68 @@
+diff --git a/TK-Client/src/com/company/assembleegameclient/ui/tooltip/ToolTip.as b/TK-Client/src/com/company/assembleegameclient/ui/tooltip/ToolTip.as
+index 48375e7..c59f994 100644
+--- a/TK-Client/src/com/company/assembleegameclient/ui/tooltip/ToolTip.as
++++ b/TK-Client/src/com/company/assembleegameclient/ui/tooltip/ToolTip.as
+@@ -25,6 +25,15 @@ import romtg.DoomLink;
+ 
+ public class ToolTip extends Sprite
+ {
++   // ROMTG-Doom: the tooltip showing, so going back to Doom (Tab) can hide it. RotMG never sees
++   // the mouse leave the item, so its tooltip stayed on the side panel (Ryan, 2026-11-15).
++   public static var current:ToolTip = null;
++
++   public static function hideCurrent():void {
++      if (current != null) {
++         current.visible = false;
++      }
++   }
+ 
+ 
+    private var background_:uint;
+@@ -103,6 +112,8 @@ public class ToolTip extends Sprite
+ 
+    private function onAddedToStage(event:Event) : void
+    {
++      current = this;
++      this.visible = true;
+       this.draw();
+       if(this.followMouse_)
+       {
+@@ -125,6 +136,9 @@ public class ToolTip extends Sprite
+ 
+    private function onRemovedFromStage(event:Event) : void
+    {
++      if (current == this) {
++         current = null;
++      }
+       DoomLink.tooltip(this, false);
+       removeEventListener(Event.ENTER_FRAME,this.onEnterFrame);
+    }
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index 14bb997..1bbc079 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -12,6 +12,7 @@ package romtg
+    import flash.events.Event;
+    import flash.geom.Point;
+    import com.company.assembleegameclient.ui.menu.Menu;
++   import com.company.assembleegameclient.ui.tooltip.ToolTip;
+    import com.company.assembleegameclient.ui.options.Options;
+    import romtg.pets.PetsWindow;
+    import kabam.rotmg.maploading.view.MapLoadingView;
+@@ -486,7 +487,7 @@ package romtg
+          // Only while the side panel has the mouse (Tab): back in Doom, RotMG's tooltip stays
+          // up (it never sees the mouse leave) and kept re-showing the copy over Doom (Ryan,
+          // 2026-11-15).
+-         HudWindow.tooltip(tip as DisplayObject, showing && viewing && !controlling && r != null, r);
++         HudWindow.tooltip(tip as DisplayObject, showing && viewing && !controlling && r != null && (tip as DisplayObject).visible, r);
+          var line:String = "tip -";
+          if (r != null)
+          {
+@@ -903,6 +904,7 @@ package romtg
+             if (controlling)
+             {
+                HudWindow.tooltip(null, false);   // back in Doom: no tooltip left hanging over it
++               ToolTip.hideCurrent();             // nor RotMG's own, over its side panel
+             }
+             moveX = moveY = 0;
+             hasGoto = false;

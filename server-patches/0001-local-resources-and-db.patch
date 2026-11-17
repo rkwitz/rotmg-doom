@@ -1,0 +1,44 @@
+diff --git a/TK-Server/TKR.App/server.json b/TK-Server/TKR.App/server.json
+index 23e04ff..1c94a83 100644
+--- a/TK-Server/TKR.App/server.json
++++ b/TK-Server/TKR.App/server.json
+@@ -3,7 +3,7 @@
+     "host": "127.0.0.1",
+     "port": 6379,
+     "auth": "",
+-    "index": 0
++    "index": 1
+   },
+   "serverInfo": {
+     "type": "Account",
+@@ -13,7 +13,7 @@
+   },
+   "serverSettings": {
+     "logFolder": "./logs",
+-    "resourceFolder": "./resources",
++    "resourceFolder": "../../../../TKR.Shared/resources",
+     "sendGridApiKey": ""
+   },
+   "discordIntegration": {
+diff --git a/TK-Server/TKR.WorldServer/wServer.json b/TK-Server/TKR.WorldServer/wServer.json
+index 12a91fb..179bfe7 100644
+--- a/TK-Server/TKR.WorldServer/wServer.json
++++ b/TK-Server/TKR.WorldServer/wServer.json
+@@ -3,7 +3,7 @@
+         "host": "127.0.0.1",
+         "port": 6379,
+         "auth": "",
+-        "index": 0
++        "index": 1
+     },
+     "serverInfo": {
+         "type": "World",
+@@ -18,7 +18,7 @@
+     },
+     "serverSettings": {
+         "logFolder": "./logs",
+-        "resourceFolder": "./resources",
++        "resourceFolder": "../../../../TKR.Shared/resources",
+         "version": "3.0.0",
+         "maxConnections": 300,
+         "maxPlayers": 300,

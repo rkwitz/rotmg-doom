@@ -1,0 +1,30 @@
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index 826d70a..8d49cb8 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -50,6 +50,7 @@ package romtg
+     *   me ID                 your own object's id (never drawn: you are Doom's camera)
+     *   quest ID X Y HP MAX NAME | quest -1   the quest (boss) RotMG points you to, or none
+     *   cash CREDITS FAME     your gold and fame
++    *   j ID TYPE X Y SIZE MINE [RGB MS INTENSITY]   a shot (with its particle trail)
+     *   tip X Y W H | tip -   a tooltip is showing at X Y W H (RotMG stage units), or none
+     *   menu X Y W H | menu - a menu (teleport, player...) is open at X Y W H (800x600 units), or
+     *                         none: the swapper shows it over Doom with the side panel
+@@ -161,7 +162,16 @@ package romtg
+          {
+             var size:Number = shot.projProps_ != null && shot.projProps_.size_ >= 0 ? shot.projProps_.size_ : 100;
+             var mine:int = map != null && map.player_ != null && shot.ownerId_ == map.player_.objectId_ ? 1 : 0;
+-            send("j " + shot.objectId_ + " " + shot.props_.type_ + " " + fix(shot.x_) + " " + fix(shot.y_) + " " + int(size) + " " + mine);
++            // With its particle trail if it has one (colour, lifetime ms, intensity %; RotMG's
++            // Projectile.draw sparks): Doom draws the same trail (Ryan, 2026-11-15).
++            var trail:String = "";
++            if (shot.projProps_ != null && shot.projProps_.particleTrail_)
++            {
++               trail = " " + uint(shot.projProps_.particleTrailColor_).toString(16) + " "
++                  + (shot.projProps_.particleTrailLifetimeMS != -1 ? shot.projProps_.particleTrailLifetimeMS : 600) + " "
++                  + shot.projProps_.particleTrailIntensity_;
++            }
++            send("j " + shot.objectId_ + " " + shot.props_.type_ + " " + fix(shot.x_) + " " + fix(shot.y_) + " " + int(size) + " " + mine + trail);
+             seenShots[shot.objectId_] = fix(shot.x_) + " " + fix(shot.y_);
+             return;
+          }

@@ -1,0 +1,78 @@
+diff --git a/TK-Client/src/com/company/assembleegameclient/ui/panels/itemgrids/itemtiles/InteractiveItemTile.as b/TK-Client/src/com/company/assembleegameclient/ui/panels/itemgrids/itemtiles/InteractiveItemTile.as
+index 7d56657..bb43b23 100644
+--- a/TK-Client/src/com/company/assembleegameclient/ui/panels/itemgrids/itemtiles/InteractiveItemTile.as
++++ b/TK-Client/src/com/company/assembleegameclient/ui/panels/itemgrids/itemtiles/InteractiveItemTile.as
+@@ -23,6 +23,9 @@ package com.company.assembleegameclient.ui.panels.itemgrids.itemtiles
+       private var pendingSecondClick:Boolean;
+       
+       private var isDragging:Boolean;
++      // ROMTG-Doom: an item is being dragged (romtg.DoomLink `drag`: over Doom, RotMG's ground
++      // shows meanwhile so the item can be dropped on it).
++      public static var draggingNow:Boolean = false;
+       
+       public function InteractiveItemTile(id:int, parentGrid:ItemGrid, isInteractive:Boolean)
+       {
+@@ -151,6 +154,7 @@ package com.company.assembleegameclient.ui.panels.itemgrids.itemtiles
+       private function beginDrag(e:MouseEvent) : void
+       {
+          this.isDragging = true;
++         draggingNow = true;
+          stage.addChild(itemSprite);
+          toggleDragState(false);
+          itemSprite.startDrag(true);
+@@ -163,6 +167,7 @@ package com.company.assembleegameclient.ui.panels.itemgrids.itemtiles
+       private function endDrag(e:MouseEvent) : void
+       {
+          this.isDragging = false;
++         draggingNow = false;
+          toggleDragState(true);
+          itemSprite.stopDrag();
+          itemSprite.removeEventListener(MouseEvent.MOUSE_UP,this.endDrag);
+@@ -177,6 +182,7 @@ package com.company.assembleegameclient.ui.panels.itemgrids.itemtiles
+          if(this.isDragging)
+          {
+             itemSprite.stopDrag();
++            draggingNow = false;
+          }
+       }
+    }
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index 750f3c0..1e749d9 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -13,6 +13,7 @@ package romtg
+    import flash.events.Event;
+    import flash.geom.Point;
+    import com.company.assembleegameclient.ui.menu.Menu;
++   import com.company.assembleegameclient.ui.panels.itemgrids.itemtiles.InteractiveItemTile;
+    import com.company.assembleegameclient.ui.tooltip.ToolTip;
+    import com.company.assembleegameclient.ui.TextBox;
+    import com.company.assembleegameclient.ui.options.Options;
+@@ -138,6 +139,7 @@ package romtg
+       private static var modalSent:String = "";
+       public static var dialogCentre:Number = -1;   // `dlgcx`
+       private static var menuSent:String = "";
++      private static var dragSent:String = "drag 0";
+       private static var namesSent:Dictionary = new Dictionary();
+       private static var healingSent:Dictionary = new Dictionary();
+       private static var animSent:Dictionary = new Dictionary();
+@@ -676,6 +678,19 @@ package romtg
+             // A dialog or popup opens in the play area, which Doom covers: the swapper shows
+             // RotMG over Doom while one is open (the potion storage showed only in the corner
+             // view, 2026-11-15).
++            // Dragging an item out of the side panel (Tab): RotMG's ground is shown over Doom
++            // till you let go, so it drops there into a bag as in RotMG (Ryan, 2026-11-16:
++            // dropping didn't work in Doom; the release landed on Doom's window).
++            // (Only once it leaves the panel: moving items about in it shows no ground.)
++            var offPanel:Boolean = map.stage != null && map.stage.stageWidth > 0
++               && map.stage.mouseX / map.stage.stageWidth * 800 < 600;
++            var dragLine:String = InteractiveItemTile.draggingNow && (offPanel || dragSent == "drag 1") ? "drag 1" : "drag 0";
++            if (dragLine != dragSent)
++            {
++               dragSent = dragLine;
++               send(dragLine);
++               flush();
++            }
+             var menuLine:String = "menu -";
+             var mr:Rectangle = Menu.current != null && Menu.current.stage != null ? inRotmgUnits(Menu.current) : null;
+             if (mr != null)

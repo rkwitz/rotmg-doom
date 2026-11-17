@@ -1,0 +1,32 @@
+diff --git a/TK-Server/TKR.WorldServer/core/net/handlers/InvSwapHandler.cs b/TK-Server/TKR.WorldServer/core/net/handlers/InvSwapHandler.cs
+index f12657d..767b2dd 100644
+--- a/TK-Server/TKR.WorldServer/core/net/handlers/InvSwapHandler.cs
++++ b/TK-Server/TKR.WorldServer/core/net/handlers/InvSwapHandler.cs
+@@ -136,8 +136,8 @@ namespace TKR.WorldServer.core.net.handlers
+ 
+             var conDataFromTrans = conFrom.Inventory.CreateDataTransaction();
+             var conDataToTrans = conTo.Inventory.CreateDataTransaction();
+-            var dataFrom = conDataFromTrans[slotFrom];
+-            var dataTo = conDataToTrans[slotTo];
++            var dataFrom = conDataFromTrans[slotFrom] ?? StackData(itemFrom);
++            var dataTo = conDataToTrans[slotTo] ?? StackData(itemTo);
+ 
+             conDataToTrans[slotTo] = dataFrom;
+             conDataFromTrans[slotFrom] = dataTo;
+@@ -209,6 +209,16 @@ namespace TKR.WorldServer.core.net.handlers
+         }
+ 
+ 
++        /// <summary>ROMTG-Doom: a stackable item (Glowing Shard...) that came without its stack
++        /// data (one of one), so it stacks when dropped on its kind; without this it never did
++        /// and TK's /fixstacks command was the workaround.</summary>
++        private static ItemData StackData(Item item)
++        {
++            if (item == null || item.QuantityLimit <= 0 || !System.Array.Exists(StackableItems, s => item.ObjectId.Contains(s)))
++                return null;
++            return new ItemData() { ObjectId = null, Stack = 1, MaxStack = item.QuantityLimit };
++        }
++
+         private bool ValidateStackable(ItemData itemA, ItemData itemB, int slotA, int slotB) =>
+             itemA != null && itemB != null
+             && slotA != slotB

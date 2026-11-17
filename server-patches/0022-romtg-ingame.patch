@@ -1,0 +1,62 @@
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index 716379c..29d2f9b 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -45,6 +45,7 @@ package romtg
+     *   quest ID X Y HP MAX NAME | quest -1   the quest (boss) RotMG points you to, or none
+     *   cash CREDITS FAME     your gold and fame
+     *   tip X Y W H | tip -   a tooltip is showing at X Y W H (RotMG stage units), or none
++    *   ingame 1|0            you are in a game, or out in RotMG's menus (the swapper shows RotMG)
+     *   modal 1 X Y W H | modal 0   a dialog or popup (potion storage...) is open at X Y W H
+     *                         (800x600 units), or none: the swapper shows just it (and the side
+     *                         panel) over Doom. From the swapper, `dlgcx U`: where the middle of
+@@ -617,9 +618,49 @@ package romtg
+          }
+       }
+ 
++      private static var watching:Boolean = false;
++      private static var ingameSent:int = -1;
++      private static var outSince:int = -1;
++      private static const OUT_MS:int = 4000;
++
++      /** `ingame 1|0` when you enter a game or leave it for RotMG's menus (character select,
++       *  death screen...): the swapper brings RotMG up while you're out of a game, as nothing
++       *  in Doom works then (Ryan, 2026-11-15: backing out of the game in Doom was broken). */
++      private static function watchGame(event:Event) : void
++      {
++         var ingame:int = map != null && map.gs_ != null && map.gs_.stage != null ? 1 : 0;
++         // Out only once it lasts: going through a portal, the old game goes a moment before
++         // the new one comes (and a loading screen between).
++         var now:int = getTimer();
++         if (ingame == 1)
++         {
++            outSince = -1;
++         }
++         else if (outSince < 0)
++         {
++            outSince = now;
++         }
++         if (ingame == 0 && now - outSince < OUT_MS && ingameSent != -1)
++         {
++            return;
++         }
++         if (ingame != ingameSent)
++         {
++            ingameSent = ingame;
++            send("ingame " + ingame);
++            flush();
++         }
++      }
++
+       /** The swapper just came up: it gets the whole map as it is now. */
+       private static function onConnect(event:Event) : void
+       {
++         ingameSent = -1;
++         if (!watching && WebMain.STAGE != null)
++         {
++            watching = true;
++            WebMain.STAGE.addEventListener(Event.ENTER_FRAME, watchGame);
++         }
+          if (map == null)
+          {
+             return;

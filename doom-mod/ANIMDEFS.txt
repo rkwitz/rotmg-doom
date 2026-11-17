@@ -1,0 +1,3 @@
+// ROMTG-Doom: the ground, drawn by the handler (romtg_handler.zs DrawGround) into a canvas that
+// is Doom's floor: 256 x 256 tiles of 16 pixels, repeating.
+canvastexture RTGROUND 4096 4096

@@ -1,0 +1,167 @@
+diff --git a/TK-Client/src/com/company/assembleegameclient/objects/Player.as b/TK-Client/src/com/company/assembleegameclient/objects/Player.as
+index 5fb3320..ad52e2e 100644
+--- a/TK-Client/src/com/company/assembleegameclient/objects/Player.as
++++ b/TK-Client/src/com/company/assembleegameclient/objects/Player.as
+@@ -256,7 +256,26 @@ public class Player extends Character {
+                 playerAngle = playerAngle + dt * Parameters.PLAYER_ROTATE_SPEED * this.rotate_;
+                 Parameters.data_.cameraAngle = playerAngle;
+             }
+-            if (doomWalks) {
++            if (doomWalks && DoomLink.hasGoto) {
++                // Follow Doom's place for you, no faster than your speed (see DoomLink.gotoX).
++                moveSpeed = this.getMoveSpeed();
++                var gdx:Number = DoomLink.gotoX - x_;
++                var gdy:Number = DoomLink.gotoY - y_;
++                var gd:Number = Math.sqrt(gdx * gdx + gdy * gdy);
++                if (gd < 0.0001 || gd > 3 || dt <= 0) {
++                    moveVec_.x = 0;   // there, or too far to be a step (a re-centre in flight)
++                    moveVec_.y = 0;
++                }
++                else if (gd <= moveSpeed * dt) {
++                    moveVec_.x = gdx / dt;
++                    moveVec_.y = gdy / dt;
++                }
++                else {
++                    moveVec_.x = moveSpeed * gdx / gd;
++                    moveVec_.y = moveSpeed * gdy / gd;
++                }
++            }
++            else if (doomWalks) {
+                 moveSpeed = this.getMoveSpeed();
+                 moveVec_.x = moveSpeed * DoomLink.moveX;
+                 moveVec_.y = moveSpeed * DoomLink.moveY;
+@@ -951,6 +970,11 @@ public class Player extends Character {
+         return null;
+     }
+ 
++    /** ROMTG-Doom: your walking speed now, tiles a second, for Doom to walk you at (DoomLink). */
++    public function doomSpeed():Number {
++        return isParalyzed() || isPetrified() ? 0 : this.getMoveSpeed() * 1000;
++    }
++
+     private function getMoveSpeed():Number {
+         if (isSlowed()) {
+             return MIN_MOVE_SPEED * this.moveMultiplier_;
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index 7d1c1ec..a6761f7 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -84,6 +84,18 @@ package romtg
+       private static var lastCash:String = "";
+       public static var moveX:Number = 0;
+       public static var moveY:Number = 0;
++      // Doom decides where you are (Ryan, 2026-11-15): it walks you at once, at your speed
++      // (`spd`), against the squares round you (`grid`), and says where (`goto`); you follow it
++      // here at RotMG's own speed and through RotMG's own walkTo, so you never go faster or
++      // through anything you couldn't, and the server sees ordinary moves.
++      public static var gotoX:Number = 0;
++      public static var gotoY:Number = 0;
++      public static var hasGoto:Boolean = false;
++      private static var speedSent:String = "";
++      private static var gridSent:String = "";
++      private static var gridAt:int = 0;
++      private static const GRID_R:int = 3;
++      private static const GRID_MS:int = 100;
+       public static var firing:Boolean = false;
+       /** Where Doom aims, in RotMG world radians. */
+       public static var aim:Number = 0;
+@@ -118,6 +130,7 @@ package romtg
+          seen = new Dictionary();
+          seenShots = new Dictionary();
+          send("map " + clean(m.name_) + " " + m.width_ + " " + m.height_);
++         speedSent = gridSent = "";   // a new map: the bridge forgot them; say them again
+       }
+ 
+       public static function tile(x:int, y:int, type:uint) : void
+@@ -212,6 +225,48 @@ package romtg
+          return new Rectangle((g.x - left) / unit, (g.y - top) / unit, g.width / unit, g.height / unit);
+       }
+ 
++      /** For Doom's own walking: your speed now (`spd TILES_PER_S`, slows, water and boosts
++       *  in; 0 while paralyzed) and the squares round you (`grid CX CY R CELLS`: from CX-R,
++       *  CY-R row by row, 0 walkable, 1 not, 2 not and blocking the next square's edge too, as
++       *  Player.isValidPosition reads them). */
++      private static function sendWalking(player:Player, now:int) : void
++      {
++         var spd:String = "spd " + player.doomSpeed().toFixed(3);
++         if (spd != speedSent)
++         {
++            speedSent = spd;
++            send(spd);
++         }
++         var cx:int = int(player.x_), cy:int = int(player.y_);
++         if (now - gridAt < GRID_MS && gridSent.indexOf("grid " + cx + " " + cy + " ") == 0)
++         {
++            return;
++         }
++         gridAt = now;
++         var cells:String = "";
++         for (var j:int = -GRID_R; j <= GRID_R; j++)
++         {
++            for (var i:int = -GRID_R; i <= GRID_R; i++)
++            {
++               var sq:Square = map.lookupSquare(cx + i, cy + j);
++               if (sq == null || sq.tileType_ == 255 || sq.obj_ != null && sq.obj_.props_.fullOccupy_)
++               {
++                  cells += "2";
++               }
++               else
++               {
++                  cells += sq.isWalkable() ? "0" : "1";
++               }
++            }
++         }
++         var line:String = "grid " + cx + " " + cy + " " + GRID_R + " " + cells;
++         if (line != gridSent)
++         {
++            gridSent = line;
++            send(line);
++         }
++      }
++
+       /** `view X Y R`: the middle of RotMG's circle of ground (you) and its radius, in RotMG's
+        *  800x600 units of its window (as inRotmgUnits), when they change. */
+       private static function sendView(player:Player) : void
+@@ -294,6 +349,10 @@ package romtg
+       public static function position(player:Player, tilesPerSecond:Number) : void
+       {
+          var now:int = getTimer();
++         if (map != null && controlling)
++         {
++            sendWalking(player, now);
++         }
+          if ((player.x_ != lastX || player.y_ != lastY) && now - posAt >= POS_MS)
+          {
+             posAt = now;
+@@ -511,6 +570,7 @@ package romtg
+             return;
+          }
+          send("map " + clean(map.name_) + " " + map.width_ + " " + map.height_);
++         speedSent = gridSent = "";
+          var square:Square;
+          for each (square in map.squares_)
+          {
+@@ -561,8 +621,15 @@ package romtg
+                HudWindow.tooltip(null, false);   // back in Doom: no tooltip left hanging over it
+             }
+             moveX = moveY = 0;
++            hasGoto = false;
+             firing = false;
+          }
++         else if (parts[0] == "goto" && parts.length >= 3)
++         {
++            gotoX = Number(parts[1]);
++            gotoY = Number(parts[2]);
++            hasGoto = controlling && !isNaN(gotoX) && !isNaN(gotoY);
++         }
+          else if (parts[0] == "m" && parts.length >= 3)
+          {
+             moveX = Number(parts[1]);
+@@ -670,6 +737,7 @@ package romtg
+          controlling = false;
+          firing = false;
+          moveX = moveY = 0;
++         hasGoto = false;
+          if (socket == null)
+          {
+             return;

@@ -1,0 +1,74 @@
+diff --git a/TK-Client/src/com/company/assembleegameclient/ui/TextBox.as b/TK-Client/src/com/company/assembleegameclient/ui/TextBox.as
+index f31e816..025333b 100644
+--- a/TK-Client/src/com/company/assembleegameclient/ui/TextBox.as
++++ b/TK-Client/src/com/company/assembleegameclient/ui/TextBox.as
+@@ -58,6 +58,16 @@ public class TextBox extends Sprite
+    }
+ 
+    public static var isInputtingText:Boolean = false;
++   // ROMTG-Doom: the chat box, so going back to Doom can close a chat line left open. Open, it
++   // made every panel ignore Doom's Enter (isInputtingText), so entering portals and doors from
++   // Doom worked only sometimes (Ryan, 2026-11-15).
++   public static var current:TextBox = null;
++
++   public static function cancelInput():void {
++      if (current != null && isInputtingText) {
++         current.unselectInput();
++      }
++   }
+ 
+ 
+    private var gs_:GameSprite;
+@@ -103,6 +113,7 @@ public class TextBox extends Sprite
+ 
+    public function TextBox(gs:GameSprite, w:int, h:int)
+    {
++      current = this;
+       this.tellers_ = [];
+       this.timer_ = new Timer(1000);
+       super();
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index 0bca9d6..b136cc6 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -14,6 +14,7 @@ package romtg
+    import flash.geom.Point;
+    import com.company.assembleegameclient.ui.menu.Menu;
+    import com.company.assembleegameclient.ui.tooltip.ToolTip;
++   import com.company.assembleegameclient.ui.TextBox;
+    import com.company.assembleegameclient.ui.options.Options;
+    import romtg.pets.PetsWindow;
+    import kabam.rotmg.maploading.view.MapLoadingView;
+@@ -613,9 +614,14 @@ package romtg
+          }
+          if (interactUntil > 0)
+          {
+-            if (now > interactUntil || interactNow())
++            if (interactNow())
+             {
+-               interactUntil = 0;   // used, or nothing came within INTERACT_WAIT_MS
++               interactUntil = 0;   // used
++            }
++            else if (now > interactUntil)
++            {
++               interactUntil = 0;   // nothing came within INTERACT_WAIT_MS
++               log("enter from Doom: nothing to use here");
+             }
+          }
+          if ((player.x_ != lastX || player.y_ != lastY) && now - posAt >= POS_MS)
+@@ -992,6 +998,7 @@ package romtg
+             {
+                HudWindow.tooltip(null, false);   // back in Doom: no tooltip left hanging over it
+                ToolTip.hideCurrent();             // nor RotMG's own, over its side panel
++               TextBox.cancelInput();             // nor a chat line left open (it ate Enter)
+             }
+             moveX = moveY = 0;
+             hasGoto = false;
+@@ -1131,6 +1138,7 @@ package romtg
+             return false;
+          }
+          var panel:Object = map.gs_.hudView.interactPanel;
++         TextBox.cancelInput();   // an open chat line makes every panel ignore the key
+          panel.draw();
+          if (panel.currObj_ == null)
+          {

@@ -1,0 +1,35 @@
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index dcafef8..57cd6e6 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -4,6 +4,7 @@ package romtg
+    import com.company.assembleegameclient.map.Square;
+    import com.company.assembleegameclient.objects.BasicObject;
+    import com.company.assembleegameclient.objects.GameObject;
++   import com.company.assembleegameclient.objects.ObjectLibrary;
+    import com.company.assembleegameclient.objects.Player;
+    import com.company.assembleegameclient.objects.Projectile;
+    import com.company.assembleegameclient.map.mapoverlay.CharacterStatusText;
+@@ -175,6 +176,7 @@ package romtg
+       }
+ 
+       private static var sentSize:Dictionary = new Dictionary();
++      private static var typesLogged:Dictionary = new Dictionary();
+ 
+       public static function added(bo:BasicObject) : void
+       {
+@@ -202,6 +204,14 @@ package romtg
+             return;
+          }
+          sentSize[go.objectId_] = go.size_;
++         // Each kind of moving thing once a run, by name, to bridge.log: to tell what an odd
++         // figure in Doom is (2026-11-15).
++         if (!go.props_.static_ && typesLogged[looks(go)] == undefined)
++         {
++            typesLogged[looks(go)] = true;
++            log("object kind: " + ObjectLibrary.getIdFromType(looks(go)) + " (0x" + looks(go).toString(16) + ")"
++               + (go is Player ? " a player" : go is RomtgPet ? " a pet" : ""));
++         }
+          send("o " + go.objectId_ + " " + looks(go) + " " + fix(go.x_) + " " + fix(go.y_) + " " + go.size_
+               + " " + (go.props_.static_ ? 1 : 0) + health(go));
+          petSkins[go.objectId_] = looks(go);

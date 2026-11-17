@@ -1,0 +1,77 @@
+diff --git a/TK-Server/TKR.WorldServer/core/miscfile/ChatManager.cs b/TK-Server/TKR.WorldServer/core/miscfile/ChatManager.cs
+index 37a9724..73fb2c5 100644
+--- a/TK-Server/TKR.WorldServer/core/miscfile/ChatManager.cs
++++ b/TK-Server/TKR.WorldServer/core/miscfile/ChatManager.cs
+@@ -148,7 +148,7 @@ namespace TKR.WorldServer.core.miscfile
+             {
+                 BubbleTime = 0,
+                 NumStars = -1,
+-                Name = "#The Talisman King",
++                Name = "#Oryx the Mad God",   // ROMTG-Doom: the realm's announcer, as in RotMG
+                 Txt = text
+             });
+         }
+diff --git a/TK-Server/TKR.WorldServer/core/worlds/KingdomManager.cs b/TK-Server/TKR.WorldServer/core/worlds/KingdomManager.cs
+index 8088746..943db01 100644
+--- a/TK-Server/TKR.WorldServer/core/worlds/KingdomManager.cs
++++ b/TK-Server/TKR.WorldServer/core/worlds/KingdomManager.cs
+@@ -522,7 +522,7 @@ namespace TKR.WorldServer.core.worlds
+                 case KingdomState.Emptying:
+                     {
+                         BroadcastMsg("RAAHH MY TROOPS HAVE FAILED ME!");
+-                        BroadcastMsg("THIS KINGDOM SHALL NOT FALL!!");
++                        BroadcastMsg("MY REALM SHALL NOT FALL!!");
+ 
+                         CurrentState = KingdomState.DoNothing;
+ 
+@@ -609,7 +609,7 @@ namespace TKR.WorldServer.core.worlds
+             {
+                 BubbleTime = 0,
+                 NumStars = -1,
+-                Name = "The Talisman King",
++                Name = "#Oryx the Mad God",
+                 Txt = sb.ToString(),
+                 TextColor = 0xFFFFFF,
+                 NameColor = 0xFF681F
+@@ -635,7 +635,7 @@ namespace TKR.WorldServer.core.worlds
+ 
+         public void Init()
+         {
+-            SpawnEvent("Talisman King", new TalismanKing(), 1024, 1024);
++            SpawnEvent("Oryx Guardian TaskMaster", new TalismanKing(), 1024, 1024);   // ROMTG-Doom: Oryx's guardians, not TK's Talisman King
+ 
+             var events = _events;
+             var evt = events[Random.Shared.Next(0, events.Count)];
+@@ -696,8 +696,8 @@ namespace TKR.WorldServer.core.worlds
+ 
+         public void OnPlayerEntered(Player player)
+         {
+-            player.SendInfo("Welcome to Talisman's Kingdom!");
+-            player.SendEnemy("The Talisman King", "You are a pest to my kingdom!");
++            player.SendInfo("Welcome to the Realm of the Mad God!");
++            player.SendEnemy("Oryx the Mad God", "You are food for my minions!");   // ROMTG-Doom: RotMG's realm greeting
+             player.SendInfo("Use [WASDQE] to move; click to shoot!");
+             player.SendInfo("Type \"/commands\" for more help");
+         }
+diff --git a/TK-Server/TKR.WorldServer/logic/db/BehaviorDb.Nexus.cs b/TK-Server/TKR.WorldServer/logic/db/BehaviorDb.Nexus.cs
+index d67b845..8e0d93c 100644
+--- a/TK-Server/TKR.WorldServer/logic/db/BehaviorDb.Nexus.cs
++++ b/TK-Server/TKR.WorldServer/logic/db/BehaviorDb.Nexus.cs
+@@ -19,7 +19,7 @@ namespace TKR.WorldServer.logic
+                         new PlayerWithinTransition(10, "Start")
+                         ),
+                     new State("Start",
+-                        new Taunt("Welcome to Talisman's Kingdom Reborn!"),
++                        new Taunt("Welcome to the Realm of the Mad God!"),
+                         new TimedTransition(4000, "0 k")
+                         ),
+                     new State("0 k",
+@@ -27,7 +27,7 @@ namespace TKR.WorldServer.logic
+                         new TimedRandomTransition(10000, false, "1", "2", "3", "Welcome")
+                         ),
+                     new State("1",
+-                        new Taunt("Uncover the mysteries of the Talisman's King!"),
++                        new Taunt("Defeat Oryx the Mad God and his minions!"),
+                         new TimedTransition(4000, "1 k")
+                         ),
+                     new State("1 k",

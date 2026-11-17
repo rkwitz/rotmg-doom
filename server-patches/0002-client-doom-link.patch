@@ -1,0 +1,2710 @@
+diff --git a/TK-Client/src/com/company/assembleegameclient/map/Map.as b/TK-Client/src/com/company/assembleegameclient/map/Map.as
+index 9f00356..c25fb9b 100644
+--- a/TK-Client/src/com/company/assembleegameclient/map/Map.as
++++ b/TK-Client/src/com/company/assembleegameclient/map/Map.as
+@@ -33,6 +33,8 @@ import kabam.rotmg.stage3D.graphic3D.TextureFactory;
+ 
+ import org.osflash.signals.Signal;
+ 
++import romtg.DoomLink;
++
+ public class Map extends Sprite {
+     public static const NEXUS:String = "Nexus";
+     private static const VISIBLE_SORT_FIELDS:Array = ["sortVal_", "objectId_"];
+@@ -121,6 +123,7 @@ public class Map extends Sprite {
+         this.showDisplays_ = showDisplays;
+         this.disableShooting_ = disableShooting;
+         this.disableAbilities_ = disableAbilities;
++        DoomLink.newMap(this);
+     }
+ 
+     public function initialize():void {
+@@ -236,6 +239,7 @@ public class Map extends Sprite {
+         var n:Square = null;
+         var square:Square = this.getSquare(x, y);
+         square.setTileType(tileType);
++        DoomLink.tile(x, y, tileType);
+         var xend:int = x < this.width_ - 1 ? int(x + 1) : int(x);
+         var yend:int = y < this.height_ - 1 ? int(y + 1) : int(y);
+         for (var xi:int = x > 0 ? int(x - 1) : int(x); xi <= xend; xi++) {
+@@ -271,6 +275,7 @@ public class Map extends Sprite {
+             return;
+         }
+         dict[bo.objectId_] = bo;
++        DoomLink.added(bo);
+     }
+ 
+     public function removeObj(objectId:int):void {
+@@ -294,6 +299,7 @@ public class Map extends Sprite {
+         }
+         bo.removeFromMap();
+         delete dict[objectId];
++        DoomLink.removed(objectId, bo);
+     }
+ 
+     public function getSquare(posX:Number, posY:Number):Square {
+diff --git a/TK-Client/src/com/company/assembleegameclient/map/mapoverlay/CharacterStatusText.as b/TK-Client/src/com/company/assembleegameclient/map/mapoverlay/CharacterStatusText.as
+index b122f76..365ef02 100644
+--- a/TK-Client/src/com/company/assembleegameclient/map/mapoverlay/CharacterStatusText.as
++++ b/TK-Client/src/com/company/assembleegameclient/map/mapoverlay/CharacterStatusText.as
+@@ -15,6 +15,9 @@ import com.company.ui.SimpleText;
+       public var go_:GameObject;
+       public var offset_:Point;
+       public var color_:uint;
++
++      /** ROMTG-Doom: the words, so Doom can show them too. */
++      public var label_:String;
+       public var lifetime_:int;
+       public var offsetTime_:int;
+       private var startTime_:int = 0;
+@@ -34,6 +37,7 @@ import com.company.ui.SimpleText;
+          }
+ 
+          this.color_ = color;
++         this.label_ = text;
+          this.lifetime_ = lifetime;
+          this.offsetTime_ = offsetTime;
+          var t:SimpleText = new SimpleText(24,color,false,0,0);
+diff --git a/TK-Client/src/com/company/assembleegameclient/map/mapoverlay/MapOverlay.as b/TK-Client/src/com/company/assembleegameclient/map/mapoverlay/MapOverlay.as
+index f814e37..3ac8c20 100644
+--- a/TK-Client/src/com/company/assembleegameclient/map/mapoverlay/MapOverlay.as
++++ b/TK-Client/src/com/company/assembleegameclient/map/mapoverlay/MapOverlay.as
+@@ -4,6 +4,7 @@ package com.company.assembleegameclient.map.mapoverlay
+    import flash.display.Sprite;
+    import kabam.rotmg.game.view.components.QueuedStatusText;
+    import kabam.rotmg.game.view.components.QueuedStatusTextList;
++   import romtg.DoomLink;
+    
+    public class MapOverlay extends Sprite
+    {
+@@ -34,11 +35,13 @@ package com.company.assembleegameclient.map.mapoverlay
+       
+       public function addStatusText(text:CharacterStatusText) : void
+       {
++         DoomLink.status(text);
+          addChild(text);
+       }
+       
+       public function addQueuedText(text:QueuedStatusText) : void
+       {
++         DoomLink.status(text);
+          var id:int = text.go_.objectId_;
+          var list:QueuedStatusTextList = this.queuedText[id] = this.queuedText[id] || this.makeQueuedStatusTextList();
+          list.append(text);
+diff --git a/TK-Client/src/com/company/assembleegameclient/objects/Player.as b/TK-Client/src/com/company/assembleegameclient/objects/Player.as
+index bd1f298..5fb3320 100644
+--- a/TK-Client/src/com/company/assembleegameclient/objects/Player.as
++++ b/TK-Client/src/com/company/assembleegameclient/objects/Player.as
+@@ -52,6 +52,8 @@ import kabam.rotmg.ui.model.TabStripModel;
+ 
+ import org.swiftsuspenders.Injector;
+ 
++import romtg.DoomLink;
++
+ public class Player extends Character {
+ 
+     public static const MS_BETWEEN_TELEPORT:int = 10000;
+@@ -246,13 +248,20 @@ public class Player extends Character {
+             return true;
+         }
+ 
+-        if (this.relMoveVec_ != null) {
++        // ROMTG-Doom: while Doom has the controls, it picks the way to walk (DoomLink).
++        var doomWalks:Boolean = map_.player_ == this && DoomLink.controlling;
++        if (this.relMoveVec_ != null || doomWalks) {
+             playerAngle = Parameters.data_.cameraAngle;
+             if (this.rotate_ != 0) {
+                 playerAngle = playerAngle + dt * Parameters.PLAYER_ROTATE_SPEED * this.rotate_;
+                 Parameters.data_.cameraAngle = playerAngle;
+             }
+-            if (this.relMoveVec_.x != 0 || this.relMoveVec_.y != 0) {
++            if (doomWalks) {
++                moveSpeed = this.getMoveSpeed();
++                moveVec_.x = moveSpeed * DoomLink.moveX;
++                moveVec_.y = moveSpeed * DoomLink.moveY;
++            }
++            else if (this.relMoveVec_.x != 0 || this.relMoveVec_.y != 0) {
+                 moveSpeed = this.getMoveSpeed();
+                 moveVecAngle = Math.atan2(this.relMoveVec_.y, this.relMoveVec_.x);
+                 moveVec_.x = moveSpeed * Math.cos(playerAngle + moveVecAngle);
+@@ -271,6 +280,10 @@ public class Player extends Character {
+         else if (!super.update(time, dt)) {
+             return false;
+         }
++        if (map_.player_ == this) {
++            DoomLink.shoot(this);
++            DoomLink.position(this, 1000 * (MIN_MOVE_SPEED + this.speed_ / 75 * (MAX_MOVE_SPEED - MIN_MOVE_SPEED)));
++        }
+ 
+         if (map_.player_ == this && square_.props_.maxDamage_ > 0 && square_.lastDamage_ + 500 < time && !isInvincible() && (square_.obj_ == null || !square_.obj_.props_.protectFromGroundDamage_)) {
+             d = map_.gs_.gsc_.getNextDamage(square_.props_.minDamage_, square_.props_.maxDamage_);
+diff --git a/TK-Client/src/com/company/assembleegameclient/ui/TextBox.as b/TK-Client/src/com/company/assembleegameclient/ui/TextBox.as
+index c7d363d..f31e816 100644
+--- a/TK-Client/src/com/company/assembleegameclient/ui/TextBox.as
++++ b/TK-Client/src/com/company/assembleegameclient/ui/TextBox.as
+@@ -32,6 +32,8 @@ import org.hamcrest.text.re;
+ import org.osflash.signals.Signal;
+ import org.osflash.signals.natives.NativeSignal;
+ 
++import romtg.DoomLink;
++
+ public class TextBox extends Sprite
+ {
+ 
+@@ -49,6 +51,12 @@ public class TextBox extends Sprite
+ 
+    private static var lines_:Vector.<TextBoxLine> = new Vector.<TextBoxLine>(0);
+ 
++   /** ROMTG-Doom: the chat lines, for RotMG's HUD over Doom (romtg.HudWindow). */
++   public static function get allLines() : Vector.<TextBoxLine>
++   {
++      return lines_;
++   }
++
+    public static var isInputtingText:Boolean = false;
+ 
+ 
+@@ -182,6 +190,7 @@ public class TextBox extends Sprite
+    {
+       var textBoxLine:TextBoxLine = new TextBoxLine(getTimer(),name,-1,-1,"",false,text, _nameColor, _textColor);
+       lines_.push(textBoxLine);
++      DoomLink.chat(name, "", text, _nameColor, _textColor);
+       this.refreshStatusBox();
+    }
+ 
+@@ -193,6 +202,7 @@ public class TextBox extends Sprite
+       var toMe:Boolean = recipient == this.gs_.model.getName();
+       var textBoxLine:TextBoxLine = new TextBoxLine(getTimer(),name,objectId,numStars,recipient,toMe,text, nameColor, textColor);
+       lines_.push(textBoxLine);
++      DoomLink.chat(name, recipient, text, nameColor, textColor);
+       this.refreshStatusBox();
+       if(toMe)
+       {
+diff --git a/TK-Client/src/com/company/assembleegameclient/ui/panels/itemgrids/itemtiles/ItemTileSprite.as b/TK-Client/src/com/company/assembleegameclient/ui/panels/itemgrids/itemtiles/ItemTileSprite.as
+index 094bf81..8af9928 100644
+--- a/TK-Client/src/com/company/assembleegameclient/ui/panels/itemgrids/itemtiles/ItemTileSprite.as
++++ b/TK-Client/src/com/company/assembleegameclient/ui/panels/itemgrids/itemtiles/ItemTileSprite.as
+@@ -11,6 +11,7 @@ import flash.display.Bitmap;
+    import flash.display.Sprite;
+ import flash.events.TimerEvent;
+ import flash.filters.ColorMatrixFilter;
++import flash.filters.GlowFilter;
+    import flash.geom.Matrix;
+ import flash.utils.Timer;
+ 
+@@ -44,6 +45,33 @@ import kabam.rotmg.constants.ItemConstants;
+          this.itemData = null;
+       }
+       
++      private var countText:SimpleText;
++
++      private function setCount(count:String, texture:BitmapData) : void
++      {
++         if(count == null || texture == null)
++         {
++            if(this.countText != null)
++            {
++               this.countText.visible = false;
++            }
++            return;
++         }
++         if(this.countText == null)
++         {
++            this.countText = new SimpleText(13,16777215,false,0,0);
++            this.countText.setBold(true);
++            this.countText.filters = [new GlowFilter(0,1,3,3,4,1)];
++            addChild(this.countText);
++         }
++         this.countText.text = count;
++         this.countText.updateMetrics();
++         this.countText.visible = true;
++         // bottom right of the picture, inside it
++         this.countText.x = texture.width / 2 - this.countText.width - 2;
++         this.countText.y = texture.height / 2 - this.countText.height + 2;
++      }
++
+       public function setDim(dim:Boolean) : void
+       {
+          filters = dim?DIM_FILTER:null;
+@@ -65,30 +93,23 @@ import kabam.rotmg.constants.ItemConstants;
+                  this.itemId = -1;
+              }
+ 
++            // ROMTG-Doom: the count (stack, doses, quantity) as its own crisp text in the
++            // tile's corner, not drawn into the small item picture, where it came out blurry
++            // and cut off at the top (Ryan, 2026-11-13).
++            var count:String = null;
+             if(this.itemData != null && this.itemData.Stack > 0)
+             {
+-               texture = texture.clone();
+-               tempText = new SimpleText(12,16777215,false,0,0);
+-               tempText.text = String(this.itemData.Stack);
+-               tempText.updateMetrics();
+-               texture.draw(tempText,DOSE_MATRIX);
++               count = String(this.itemData.Stack);
+             }
+             else if(eqXML && eqXML.hasOwnProperty("Doses"))
+             {
+-               texture = texture.clone();
+-               tempText = new SimpleText(12,16777215,false,0,0);
+-               tempText.text = String(eqXML.Doses);
+-               tempText.updateMetrics();
+-               texture.draw(tempText,DOSE_MATRIX);
++               count = String(eqXML.Doses);
+             }
+             else if(eqXML && eqXML.hasOwnProperty("Quantity"))
+             {
+-               texture = texture.clone();
+-               tempText = new SimpleText(12,16777215,false,0,0);
+-               tempText.text = String(eqXML.Quantity);
+-               tempText.updateMetrics();
+-               texture.draw(tempText,DOSE_MATRIX);
++               count = String(eqXML.Quantity);
+             }
++            this.setCount(count, texture);
+              var spriteFile:String = null;
+              var spriteArray:Array = null;
+              var spritePeriod:Number = -1;
+diff --git a/TK-Client/src/com/company/assembleegameclient/ui/tooltip/ToolTip.as b/TK-Client/src/com/company/assembleegameclient/ui/tooltip/ToolTip.as
+index a8d99f1..48375e7 100644
+--- a/TK-Client/src/com/company/assembleegameclient/ui/tooltip/ToolTip.as
++++ b/TK-Client/src/com/company/assembleegameclient/ui/tooltip/ToolTip.as
+@@ -21,6 +21,7 @@ import flash.filters.DropShadowFilter;
+ import kabam.rotmg.game.view.SellableObjectPanel;
+ 
+ import kabam.rotmg.tooltips.view.TooltipsView;
++import romtg.DoomLink;
+ 
+ public class ToolTip extends Sprite
+ {
+@@ -108,6 +109,7 @@ public class ToolTip extends Sprite
+          this.alignUI();
+          this.draw();
+          this.position();
++         DoomLink.tooltip(this, true);
+          addEventListener(Event.ENTER_FRAME, this.onEnterFrame);
+ 
+ 
+@@ -123,6 +125,7 @@ public class ToolTip extends Sprite
+ 
+    private function onRemovedFromStage(event:Event) : void
+    {
++      DoomLink.tooltip(this, false);
+       removeEventListener(Event.ENTER_FRAME,this.onEnterFrame);
+    }
+ 
+@@ -130,6 +133,9 @@ public class ToolTip extends Sprite
+    {
+       if(this.followMouse_){
+          this.position();
++         // ROMTG-Doom: where it is, so it shows over Doom while you use the side panel. Here,
++         // not in position(): item tooltips (EquipmentToolTip) override position().
++         DoomLink.tooltip(this, true);
+       }
+       if(this.updateRedraw_) {
+          this.draw();
+diff --git a/TK-Client/src/kabam/rotmg/application/impl/LocalhostSetup.as b/TK-Client/src/kabam/rotmg/application/impl/LocalhostSetup.as
+index b58f7d4..c4cec2d 100644
+--- a/TK-Client/src/kabam/rotmg/application/impl/LocalhostSetup.as
++++ b/TK-Client/src/kabam/rotmg/application/impl/LocalhostSetup.as
+@@ -5,7 +5,7 @@ import kabam.rotmg.application.api.ApplicationSetup;
+ 
+ public class LocalhostSetup implements ApplicationSetup {
+     private const LOCALHOST:String = "http://127.0.0.1:2000";
+-    private const BUILD_LABEL:String = " <font color=\"#00FFFF\">LOCALHOST</font> <font color=\"#FF0000\">TKR</font> <font color=\"#FFFF00\">v{VERSION}.{MINOR}.{PATCH}</font>";
++    private const BUILD_LABEL:String = " <font color=\"#00FFFF\">LOCALHOST</font> <font color=\"#FFFF00\">v{VERSION}.{MINOR}.{PATCH}</font>";
+ 
+     public function getAppEngineUrl():String {
+         return LOCALHOST;
+diff --git a/TK-Client/src/kabam/rotmg/ui/view/BossHealthBar.as b/TK-Client/src/kabam/rotmg/ui/view/BossHealthBar.as
+index 198a4d9..d719509 100644
+--- a/TK-Client/src/kabam/rotmg/ui/view/BossHealthBar.as
++++ b/TK-Client/src/kabam/rotmg/ui/view/BossHealthBar.as
+@@ -76,7 +76,9 @@ public class BossHealthBar extends Sprite {
+         }
+         else{
+             damagePercentage_ = percentage;
+-            dmgCounter_.text = percentage + "%";
++            // ROMTG-Doom: the share of the boss's health you did, to one decimal (it showed the
++            // raw division, 15 digits).
++            dmgCounter_.text = percentage.toFixed(1) + "%";
+         }
+         dmgCounter_.updateMetrics();
+         dmgCounter_.x = foreground.x + foreground.width / 2 - dmgCounter_.width / 2;
+diff --git a/TK-Client/src/kabam/rotmg/ui/view/ClientImage.png b/TK-Client/src/kabam/rotmg/ui/view/ClientImage.png
+index fd8fafda3c33513916a3e865bbd6e2e6201ce678..0047027b9101134b52643680dd4ff45f321be8b2 100644
+GIT binary patch
+literal 24347
+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
+UpBt}=Z~y=R07*qoM6N<$f@c1-o&W#<
+
+literal 29014
+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
+Q|9_*vUe{Iopkj&pfBn?=bpQYW
+
+diff --git a/TK-Client/src/kabam/rotmg/ui/view/DoomButton.as b/TK-Client/src/kabam/rotmg/ui/view/DoomButton.as
+new file mode 100644
+index 0000000..955bc89
+--- /dev/null
++++ b/TK-Client/src/kabam/rotmg/ui/view/DoomButton.as
+@@ -0,0 +1,56 @@
++package kabam.rotmg.ui.view
++{
++   import com.company.assembleegameclient.util.TextureRedrawer;
++   import com.company.util.AssetLibrary;
++   import flash.display.Bitmap;
++   import flash.display.BitmapData;
++   import flash.display.Sprite;
++   import flash.events.MouseEvent;
++   import flash.geom.ColorTransform;
++   import romtg.DoomLink;
++
++   /**
++    * ROMTG-Doom: the swap-to-Doom icon, left of the nexus icon in the side panel and drawn the
++    * same way (an icon from lofiInterfaceBig, outlined and tinted). A click asks the swapper
++    * (rotmg-doom/scripts/duo.py) to bring Doom up, over the client's link to it (DoomLink).
++    * Does nothing when the swapper isn't running.
++    */
++   public class DoomButton extends Sprite
++   {
++      /** lofiInterfaceBig's swap arrows. */
++      private static const ICON:int = 7;
++
++      private var icon:Bitmap;
++
++      public function DoomButton()
++      {
++         super();
++         var bitmapData:BitmapData = AssetLibrary.getImageFromSet("lofiInterfaceBig", ICON);
++         this.icon = new Bitmap(TextureRedrawer.redraw(bitmapData, 320 / bitmapData.width, true, 0));
++         this.icon.transform.colorTransform = new ColorTransform(1, 0.55, 0.15);
++         addChild(this.icon);
++         buttonMode = true;
++         useHandCursor = true;
++         addEventListener(MouseEvent.CLICK, this.onClick);
++         addEventListener(MouseEvent.ROLL_OVER, this.onOver);
++         addEventListener(MouseEvent.ROLL_OUT, this.onOut);
++      }
++
++      private function onOver(event:MouseEvent) : void
++      {
++         this.icon.transform.colorTransform = new ColorTransform(1, 0.8, 0.4);
++      }
++
++      private function onOut(event:MouseEvent) : void
++      {
++         this.icon.transform.colorTransform = new ColorTransform(1, 0.55, 0.15);
++      }
++
++      private function onClick(event:MouseEvent) : void
++      {
++         event.stopImmediatePropagation();
++         DoomLink.send("swap");
++         DoomLink.flush();
++      }
++   }
++}
+diff --git a/TK-Client/src/kabam/rotmg/ui/view/HUDView.as b/TK-Client/src/kabam/rotmg/ui/view/HUDView.as
+index 7c0c30d..c4827ae 100644
+--- a/TK-Client/src/kabam/rotmg/ui/view/HUDView.as
++++ b/TK-Client/src/kabam/rotmg/ui/view/HUDView.as
+@@ -59,6 +59,8 @@ import kabam.rotmg.game.view.components.TabStripView;
+ 
+       private var nexusIndicatorBitmap_:Bitmap;
+ 
++      private var doomButton:DoomButton;
++
+       public function HUDView()
+       {
+          super();
+@@ -82,6 +84,7 @@ import kabam.rotmg.game.view.components.TabStripView;
+          var bitmapData:BitmapData = AssetLibrary.getImageFromSet("lofiInterfaceBig",6);
+          this.nexusIndicatorBitmap_ = new Bitmap(TextureRedrawer.redraw(bitmapData, 320 / bitmapData.width, true, 0));
+          this.nexusIndicatorBitmap_.transform.colorTransform = MoreColorUtil.redCT;
++         this.doomButton = new DoomButton();
+       }
+ 
+       private function addAssets() : void
+@@ -93,6 +96,7 @@ import kabam.rotmg.game.view.components.TabStripView;
+          addChild(this.characterDetails);
+          addChild(this.statMeters);
+          addChild(this.nexusIndicatorBitmap_);
++         addChild(this.doomButton);
+       }
+ 
+       private function positionAssets() : void
+@@ -109,6 +113,9 @@ import kabam.rotmg.game.view.components.TabStripView;
+          this.statMeters.y = this.STAT_METERS_POSITION.y;
+          this.nexusIndicatorBitmap_.x = this.NEXUS_INDICATOR_POSITION.x - this.nexusIndicatorBitmap_.width - 2;
+          this.nexusIndicatorBitmap_.y = this.NEXUS_INDICATOR_POSITION.y - 14;
++         // ROMTG-Doom: swap to Doom, just left of the nexus icon.
++         this.doomButton.x = this.nexusIndicatorBitmap_.x - this.doomButton.width - 2;
++         this.doomButton.y = this.nexusIndicatorBitmap_.y;
+       }
+ 
+       public function setPlayerDependentAssets(gs:GameSprite) : void
+@@ -131,6 +138,7 @@ import kabam.rotmg.game.view.components.TabStripView;
+          this.interactPanel.x = this.INTERACT_PANEL_POSITION.x;
+          this.interactPanel.y = this.INTERACT_PANEL_POSITION.y;
+          addChild(this.interactPanel);
++         // ROMTG-Doom: bottom right of the panel, above the interact panel.
+       }
+ 
+       public function draw() : void
+@@ -161,6 +169,7 @@ import kabam.rotmg.game.view.components.TabStripView;
+          this.equippedGrid.visible = false;
+          this.equippedGridBG.visible = false;
+          this.interactPanel.visible = false;
++         this.doomButton.visible = false;
+       }
+ 
+       public function tradeChanged(tradeChaged:TradeChanged) : void
+@@ -204,6 +213,7 @@ import kabam.rotmg.game.view.components.TabStripView;
+             this.equippedGrid.visible = true;
+             this.equippedGridBG.visible = true;
+             this.interactPanel.visible = true;
++            this.doomButton.visible = true;
+          }
+       }
+    }
+diff --git a/TK-Client/src/kabam/rotmg/ui/view/TitleView.as b/TK-Client/src/kabam/rotmg/ui/view/TitleView.as
+index 1aab4e4..d88c3d8 100644
+--- a/TK-Client/src/kabam/rotmg/ui/view/TitleView.as
++++ b/TK-Client/src/kabam/rotmg/ui/view/TitleView.as
+@@ -5,6 +5,7 @@ package kabam.rotmg.ui.view
+    import com.company.assembleegameclient.screens.TitleMenuOption;
+    import com.company.assembleegameclient.ui.SoundIcon;
+    import com.company.rotmg.graphics.ScreenGraphic;
++   import romtg.RealmArt;
+    import com.company.ui.SimpleText;
+    import flash.display.Sprite;
+    import flash.filters.DropShadowFilter;
+@@ -25,7 +26,7 @@ import org.osflash.signals.Signal;
+    {
+       private static var TitleScreenGraphic:Class = TitleView_TitleScreenGraphic;
+ 
+-      private static const COPYRIGHT:String = "<font color=\"#FFFF00\">© 2023 by Slendergo, GlassBBQ, Orb<font/>";
++      private static const COPYRIGHT:String = "<font color=\"#FFFF00\">Realm of the Mad God<font/>";
+ 
+ 
+       public var playClicked:Signal;
+@@ -48,8 +49,11 @@ import org.osflash.signals.Signal;
+          this.buttonsBackground = TextureParser.instance.getSliceScalingBitmap("UI","popup_header_title",800);
+          this.buttonsBackground.y = 502.5;
+          super();
++         // ROMTG-Doom: Realm of the Mad God's own title background and logo, from your Exalt
++         // install (romtg.RealmArt), where Talisman Kingdom's were.
++         addChild(RealmArt.background());
+          addChild(this.darkenFactory.create());
+-         addChild(new TitleScreenGraphic());
++         addChild(RealmArt.logo(400, 30, 360));
+          addChild(this.buttonsBackground);
+          addChild(new AccountScreen());
+          this.makeChildren();
+diff --git a/TK-Client/src/kabam/rotmg/ui/view/components/ScreenBase.as b/TK-Client/src/kabam/rotmg/ui/view/components/ScreenBase.as
+index a88e666..dfc3fec 100644
+--- a/TK-Client/src/kabam/rotmg/ui/view/components/ScreenBase.as
++++ b/TK-Client/src/kabam/rotmg/ui/view/components/ScreenBase.as
+@@ -4,6 +4,7 @@ package kabam.rotmg.ui.view.components
+    import flash.display.Sprite;
+ 
+ import kabam.rotmg.ui.view.TitleView_TitleScreenBackground;
++import romtg.RealmArt;
+ 
+ public class ScreenBase extends Sprite
+    {
+@@ -20,6 +21,7 @@ public class ScreenBase extends Sprite
+          //this.map = new MapBackground();
+          //addChild(this.map);
+          addChild(new TitleView_TitleScreenBackground());
++         addChild(RealmArt.background());   // ROMTG-Doom: Exalt's title art, when found
+          addChild(this.darkenFactory.create());
+       }
+    }
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+new file mode 100644
+index 0000000..3bf3eb0
+--- /dev/null
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -0,0 +1,652 @@
++package romtg
++{
++   import com.company.assembleegameclient.map.Map;
++   import com.company.assembleegameclient.map.Square;
++   import com.company.assembleegameclient.objects.BasicObject;
++   import com.company.assembleegameclient.objects.GameObject;
++   import com.company.assembleegameclient.objects.Player;
++   import com.company.assembleegameclient.objects.Projectile;
++   import com.company.assembleegameclient.map.mapoverlay.CharacterStatusText;
++   import com.company.assembleegameclient.parameters.Parameters;
++   import flash.display.DisplayObject;
++   import flash.events.Event;
++   import flash.geom.Rectangle;
++   import flash.events.IOErrorEvent;
++   import flash.events.KeyboardEvent;
++   import flash.events.ProgressEvent;
++   import flash.events.SecurityErrorEvent;
++   import flash.net.Socket;
++   import flash.utils.Dictionary;
++   import flash.utils.getTimer;
++   import kabam.rotmg.constants.UseType;
++   import romtg.pets.RomtgPet;
++
++   /**
++    * ROMTG-Doom: the client's line to the swapper (rotmg-doom/scripts/duo.py, 127.0.0.1:2051),
++    * which passes the realm on to Doom and Doom's controls back.
++    *
++    * Client to swapper, one line each (positions in tiles):
++    *   map NAME W H          a new map; everything before it is gone
++    *   t X Y TYPE            ground tile X,Y is TYPE
++    *   o ID TYPE X Y SIZE S [HP MAX]  an object appeared (S: 1 static, 0 moves); SIZE in
++    *                         percent; HP and MAX for enemies (their health bar)
++    *   u ID X Y [HP MAX]     a moving object moved (or an enemy's health changed)
++    *   r ID                  object ID is gone
++    *   j ID TYPE X Y SIZE    a projectile appeared (TYPE: its picture's object type)
++    *   uj ID X Y             a projectile moved
++    *   rj ID                 projectile ID is gone
++    *   p X Y SPEED           where you are, and your base speed in tiles per second
++    *   w TYPE                the weapon you hold (-1: none)
++    *   me ID                 your own object's id (never drawn: you are Doom's camera)
++    *   quest ID X Y HP MAX NAME | quest -1   the quest (boss) RotMG points you to, or none
++    *   cash CREDITS FAME     your gold and fame
++    *   tip X Y W H | tip -   a tooltip is showing at X Y W H (RotMG stage units), or none
++    *   st COLOR TEXT         a status text over you (XP gained, level up, quest complete...)
++    *   chat NC TC NAME<tab>TO<tab>TEXT       a chat line (NC/TC: name and text colours)
++    *   swap                  the Doom button
++    * Swapper to client:
++    *   ctl 1|0               Doom has the controls (1) or RotMG does (0)
++    *   m X Y                 while Doom has them: the way to walk, a vector of length 0..1
++    *   fire 1|0 ANGLE        holding fire or not; ANGLE is where Doom looks (radians, RotMG world:
++    *                         x right, y down), also used to aim the ability
++    *   act NAME              press RotMG's key for NAME (Parameters.data_ name, e.g. useHealthPotion)
++    *   view 1|0              Doom is on screen (1): RotMG's own HUD over the play area (chat, boss
++    *                         bar, gold and fame, status texts, quest arrow) is hidden, Doom draws it
++    *
++    * Doom only chooses directions and presses keys: the client walks, shoots and uses items
++    * itself, at its own speed and rate of fire, so the server sees normal play.
++    */
++   public class DoomLink
++   {
++      public static const PORT:int = 2051;
++      private static const RETRY_MS:int = 2000;
++      private static const POS_MS:int = 15;
++      private static const OBJECTS_MS:int = 40;
++      private static const PROJECTILES_MS:int = 30;
++      /** How far ahead of you an ability lands, in RotMG screen pixels (50 to a tile). */
++      private static const ABILITY_REACH:Number = 200;
++
++      public static var controlling:Boolean = false;
++      public static var viewing:Boolean = false;
++      private static const HUD_MS:int = 100;
++      private static var hudAt:int = 0;
++      private static var lastQuest:String = "";
++      private static var lastCash:String = "";
++      public static var moveX:Number = 0;
++      public static var moveY:Number = 0;
++      public static var firing:Boolean = false;
++      /** Where Doom aims, in RotMG world radians. */
++      public static var aim:Number = 0;
++
++      private static var socket:Socket;
++      private static var retryAt:int = 0;
++      private static var incoming:String = "";
++      private static var map:Map;
++      private static var posAt:int = 0;
++      private static var objectsAt:int = 0;
++      private static var projectilesAt:int = 0;
++      private static var lastX:Number = NaN;
++      private static var lastY:Number = NaN;
++      private static var weapon:int = -2;
++      private static var me:int = -1;
++      private static var seen:Dictionary = new Dictionary();
++      private static var seenShots:Dictionary = new Dictionary();
++
++      public static function newMap(m:Map) : void
++      {
++         map = m;
++         lastX = NaN;
++         weapon = -2;
++         lastQuest = lastCash = "";
++         seen = new Dictionary();
++         seenShots = new Dictionary();
++         send("map " + clean(m.name_) + " " + m.width_ + " " + m.height_);
++      }
++
++      public static function tile(x:int, y:int, type:uint) : void
++      {
++         send("t " + x + " " + y + " " + type);
++      }
++
++      public static function added(bo:BasicObject) : void
++      {
++         var shot:Projectile = bo as Projectile;
++         if (shot != null && shot.props_ != null)
++         {
++            var size:Number = shot.projProps_ != null && shot.projProps_.size_ >= 0 ? shot.projProps_.size_ : 100;
++            var mine:int = map != null && map.player_ != null && shot.ownerId_ == map.player_.objectId_ ? 1 : 0;
++            send("j " + shot.objectId_ + " " + shot.props_.type_ + " " + fix(shot.x_) + " " + fix(shot.y_) + " " + int(size) + " " + mine);
++            seenShots[shot.objectId_] = fix(shot.x_) + " " + fix(shot.y_);
++            return;
++         }
++         var go:GameObject = bo as GameObject;
++         if (go == null || go.props_ == null || (map != null && go == map.player_))
++         {
++            return;
++         }
++         send("o " + go.objectId_ + " " + looks(go) + " " + fix(go.x_) + " " + fix(go.y_) + " " + go.size_
++              + " " + (go.props_.static_ ? 1 : 0) + health(go));
++         petSkins[go.objectId_] = looks(go);
++         if (go is RomtgPet && map != null && map.name_ != "Pet Yard")
++         {
++            log("a pet appeared in " + map.name_ + ": object " + go.objectId_ + " type 0x" + go.objectType_.toString(16));
++         }
++         if (!go.props_.static_)
++         {
++            seen[go.objectId_] = fix(go.x_) + " " + fix(go.y_) + health(go);
++         }
++      }
++
++      /** A status text appeared over someone; yours go to Doom (XP, level up, quest done...),
++       *  and the ones over others (the damage you do them, mostly) go over them in Doom. */
++      public static function status(text:CharacterStatusText) : void
++      {
++         if (map == null || text == null || text.go_ == null || text.label_ == null)
++         {
++            return;
++         }
++         if (text.go_ != map.player_)
++         {
++            if (viewing)
++            {
++               send("dmg " + text.go_.objectId_ + " " + text.color_.toString(16) + " " + oneLine(text.label_));
++            }
++            return;
++         }
++         send("st " + text.color_.toString(16) + " " + oneLine(text.label_));
++         HudWindow.status(text.label_, text.color_);
++      }
++
++      private static var tipShown:String = "";
++      private static var lastAttack:int = 0;
++      private static var panelLogged:Boolean = false;
++
++      /** Where `d` is in RotMG's window, in its 800x600 units, measured against the side panel
++       *  (HUDView), which is always units 600-800 across and 0-600 down. Not against the stage's
++       *  size: with Windows' display scaling the stage's size and its coordinates disagree (the
++       *  tooltip copy landed mid-screen at 2560x1440, 2026-11-12). */
++      public static function inRotmgUnits(d:DisplayObject) : Rectangle
++      {
++         if (d == null || d.stage == null || map == null || map.gs_ == null || map.gs_.hudView == null || map.gs_.hudView.stage == null)
++         {
++            return null;
++         }
++         var panel:Rectangle = map.gs_.hudView.getBounds(d.stage);
++         if (panel.width <= 0)
++         {
++            return null;
++         }
++         // TK's stage is the window's pixels with RotMG's 800x600 area centred in it: the window's
++         // corner is at stage (-(W-800)/2, -(H-600)/2). Ryan's log (2026-11-12): stage 1920x1440,
++         // side panel bounds x 875..1360, y -420..1020, which is exactly window x 1435..1920,
++         // y 0..1440 under that rule, and his recording's native tooltip lands where it says.
++         // (Every earlier guess missed the centring: mid-screen, then too high, too low, too big.)
++         var w:Number = d.stage.stageWidth, h:Number = d.stage.stageHeight;
++         var unit:Number = w / 800;                    // window pixels per RotMG unit (4:3: = h / 600)
++         var left:Number = -(w - 800) / 2;             // the window's left edge, on the stage
++         var top:Number = -(h - 600) / 2;              // and its top
++         if (!panelLogged)
++         {
++            panelLogged = true;
++            log("side panel on the stage: " + panel + ", stage " + d.stage.stageWidth + "x" + d.stage.stageHeight
++                + ", tooltip " + d.getBounds(d.stage));
++         }
++         var g:Rectangle = d.getBounds(d.stage);
++         return new Rectangle((g.x - left) / unit, (g.y - top) / unit, g.width / unit, g.height / unit);
++      }
++
++      /** A tooltip moved, or went (`showing` false): where it is, for the swapper to let it show
++       *  over Doom while you use RotMG's side panel. */
++      public static function tooltip(tip:Object, showing:Boolean) : void
++      {
++         var r:Rectangle = showing && tip != null && tip.stage != null ? inRotmgUnits(tip as DisplayObject) : null;
++         HudWindow.tooltip(tip as DisplayObject, showing && viewing && r != null, r);
++         var line:String = "tip -";
++         if (r != null)
++         {
++            line = "tip " + int(r.x) + " " + int(r.y) + " " + int(Math.ceil(r.width)) + " " + int(Math.ceil(r.height));
++         }
++         if (line != tipShown)
++         {
++            tipShown = line;
++            send(line);
++            flush();
++         }
++      }
++
++      private static var petSkins:Dictionary = new Dictionary();
++
++      /** The object type whose picture shows `go`: a pet's skin, or the object's own type. */
++      private static function looks(go:GameObject) : int
++      {
++         var pet:RomtgPet = go as RomtgPet;
++         return pet != null && pet.skinType > 0 ? pet.skinType : go.objectType_;
++      }
++
++      /** " HP MAX" for an enemy, "" for anything else. */
++      private static function health(go:GameObject) : String
++      {
++         return go.props_ != null && go.props_.isEnemy_ ? " " + go.hp_ + " " + go.maxHP_ : "";
++      }
++
++      public static function chat(name:String, to:String, text:String, nameColor:int, textColor:int) : void
++      {
++         send("chat " + uint(nameColor).toString(16) + " " + uint(textColor).toString(16) + " "
++              + oneLine(name) + "\t" + oneLine(to) + "\t" + oneLine(text));
++      }
++
++      public static function removed(objectId:int, bo:BasicObject) : void
++      {
++         if (bo is Projectile)
++         {
++            delete seenShots[objectId];
++            send("rj " + objectId);
++         }
++         else
++         {
++            delete seen[objectId];
++            send("r " + objectId);
++         }
++      }
++
++      /** Once a frame from your player: where you are, what moved, your weapon; then the
++       *  frame's lines go out. */
++      public static function position(player:Player, tilesPerSecond:Number) : void
++      {
++         var now:int = getTimer();
++         if ((player.x_ != lastX || player.y_ != lastY) && now - posAt >= POS_MS)
++         {
++            posAt = now;
++            lastX = player.x_;
++            lastY = player.y_;
++            send("p " + player.x_.toFixed(4) + " " + player.y_.toFixed(4) + " " + tilesPerSecond.toFixed(4));
++         }
++         // You are the camera in Doom: the bridge must never draw you as an object (your own
++         // object can be reported before map.player_ is set).
++         if (player.objectId_ != me)
++         {
++            me = player.objectId_;
++            send("me " + me);
++         }
++         var held:int = player.equipment_ != null && player.equipment_.length > 0 ? player.equipment_[0] : -1;
++         if (held != weapon)
++         {
++            weapon = held;
++            send("w " + held);
++         }
++         if (map != null && now - hudAt >= HUD_MS)
++         {
++            hudAt = now;
++            hud(player, now);
++         }
++         if (viewing)
++         {
++            hideOwnHud(true);
++            HudWindow.update(map, player, now);
++         }
++         // A shot (or swing) just went: Doom animates the weapon in your hand over the time
++         // to the next one, your weapon's real rate of fire (Player.attackPeriod_, ms).
++         if (player.attackStart_ != lastAttack)
++         {
++            lastAttack = player.attackStart_;
++            send("atk " + int(Math.max(80, player.attackPeriod_)));
++         }
++         if (map != null && now - objectsAt >= OBJECTS_MS)
++         {
++            objectsAt = now;
++            var go:GameObject;
++            for each (go in map.goDict_)
++            {
++               if (go.props_ == null || go.props_.static_ || go == player)
++               {
++                  continue;
++               }
++               // A pet's look comes after it appears (its skin stat): show it again with it.
++               if (go is RomtgPet && petSkins[go.objectId_] != looks(go))
++               {
++                  added(go);
++                  continue;
++               }
++               var at:String = fix(go.x_) + " " + fix(go.y_) + health(go);
++               if (seen[go.objectId_] != at)
++               {
++                  seen[go.objectId_] = at;
++                  send("u " + go.objectId_ + " " + at);
++               }
++            }
++         }
++         if (map != null && now - projectilesAt >= PROJECTILES_MS)
++         {
++            projectilesAt = now;
++            var bo:BasicObject;
++            for each (bo in map.boDict_)
++            {
++               var shot:Projectile = bo as Projectile;
++               if (shot == null)
++               {
++                  continue;
++               }
++               var where:String = fix(shot.x_) + " " + fix(shot.y_);
++               if (seenShots[shot.objectId_] != where)
++               {
++                  seenShots[shot.objectId_] = where;
++                  send("uj " + shot.objectId_ + " " + where);
++               }
++            }
++         }
++         flush();
++      }
++
++      /** The quest (boss) and your gold and fame, when they change. */
++      private static function hud(player:Player, now:int) : void
++      {
++         var quest:String = "quest -1";
++         var q:GameObject = map.quest_ != null ? map.quest_.getObject(now) : null;
++         if (q != null && q.props_ != null)
++         {
++            var name:String = q.props_.displayId_ != null && q.props_.displayId_ != "" ? q.props_.displayId_ : q.props_.id_;
++            quest = "quest " + q.objectId_ + " " + fix(q.x_) + " " + fix(q.y_) + " " + q.hp_ + " " + q.maxHP_ + " " + oneLine(name);
++         }
++         if (quest != lastQuest)
++         {
++            lastQuest = quest;
++            send(quest);
++         }
++         var cash:String = "cash " + player.credits_ + " " + player.fame_;
++         if (cash != lastCash)
++         {
++            lastCash = cash;
++            send(cash);
++         }
++      }
++
++      /** RotMG's own HUD over the play area, hidden while Doom shows it (or back). */
++      private static function hideOwnHud(hide:Boolean) : void
++      {
++         if (map == null || map.gs_ == null)
++         {
++            return;
++         }
++         if (map.gs_.textBox_ != null) map.gs_.textBox_.visible = !hide;
++         if (map.gs_.creditDisplay_ != null) map.gs_.creditDisplay_.visible = !hide;
++         if (map.mapOverlay_ != null) map.mapOverlay_.visible = !hide;
++         if (map.partyOverlay_ != null) map.partyOverlay_.visible = !hide;
++         if (map.gs_.bossHealthBar != null)
++         {
++            map.gs_.bossHealthBar.visible = !hide;
++            if (!hide)
++            {
++               map.gs_.bossHealthBar.draw();   // hides itself again if there's no boss
++            }
++         }
++      }
++
++      /** While Doom has the controls and you hold fire: shoot where Doom aims. Your weapon's own
++       *  rate of fire applies, as with the mouse. */
++      public static function shoot(player:Player) : void
++      {
++         if (controlling && firing)
++         {
++            player.attemptAttackAngle(aim - Parameters.data_.cameraAngle);
++         }
++      }
++
++      private static var logged:int = 0;
++
++      /** A line for the bridge's log (logs/bridge.log), to see afterwards what the client did.
++       *  At most 300 a run. */
++      public static function log(text:String) : void
++      {
++         if (logged < 300)
++         {
++            logged++;
++            send("log " + oneLine(text));
++         }
++      }
++
++      public static function send(line:String) : void
++      {
++         connect();
++         if (socket != null && socket.connected)
++         {
++            socket.writeUTFBytes(line + "\n");
++         }
++      }
++
++      public static function flush() : void
++      {
++         connect();
++         if (socket != null && socket.connected)
++         {
++            try
++            {
++               socket.flush();
++            }
++            catch (e:Error)
++            {
++               drop();
++            }
++         }
++      }
++
++      private static function connect() : void
++      {
++         if (socket != null || getTimer() < retryAt)
++         {
++            return;
++         }
++         retryAt = getTimer() + RETRY_MS;
++         socket = new Socket();
++         socket.addEventListener(Event.CONNECT, onConnect);
++         socket.addEventListener(Event.CLOSE, onClose);
++         socket.addEventListener(IOErrorEvent.IO_ERROR, onClose);
++         socket.addEventListener(SecurityErrorEvent.SECURITY_ERROR, onClose);
++         socket.addEventListener(ProgressEvent.SOCKET_DATA, onData);
++         try
++         {
++            socket.connect("127.0.0.1", PORT);
++         }
++         catch (e:Error)
++         {
++            drop();
++         }
++      }
++
++      /** The swapper just came up: it gets the whole map as it is now. */
++      private static function onConnect(event:Event) : void
++      {
++         if (map == null)
++         {
++            return;
++         }
++         send("map " + clean(map.name_) + " " + map.width_ + " " + map.height_);
++         var square:Square;
++         for each (square in map.squares_)
++         {
++            if (square != null && square.tileType_ != 255)
++            {
++               tile(square.x_, square.y_, square.tileType_);
++            }
++         }
++         seen = new Dictionary();
++         seenShots = new Dictionary();
++         var go:GameObject;
++         for each (go in map.goDict_)
++         {
++            added(go);
++         }
++         var bo:BasicObject;
++         for each (bo in map.boDict_)
++         {
++            added(bo);
++         }
++         lastX = NaN;
++         weapon = -2;
++         me = -1;
++         lastQuest = lastCash = "";
++         flush();
++      }
++
++      private static function onData(event:ProgressEvent) : void
++      {
++         incoming += socket.readUTFBytes(socket.bytesAvailable);
++         var end:int = incoming.indexOf("\n");
++         while (end >= 0)
++         {
++            handle(incoming.substring(0, end));
++            incoming = incoming.substring(end + 1);
++            end = incoming.indexOf("\n");
++         }
++      }
++
++      private static function handle(line:String) : void
++      {
++         var parts:Array = line.split(" ");
++         if (parts[0] == "ctl")
++         {
++            controlling = parts[1] == "1";
++            if (controlling)
++            {
++               HudWindow.tooltip(null, false);   // back in Doom: no tooltip left hanging over it
++            }
++            moveX = moveY = 0;
++            firing = false;
++         }
++         else if (parts[0] == "m" && parts.length >= 3)
++         {
++            moveX = Number(parts[1]);
++            moveY = Number(parts[2]);
++            if (isNaN(moveX) || isNaN(moveY))
++            {
++               moveX = moveY = 0;
++            }
++         }
++         else if (parts[0] == "fire")
++         {
++            if (parts.length >= 3 && !isNaN(Number(parts[2])))
++            {
++               aim = Number(parts[2]);
++            }
++            firing = parts[1] == "1";
++         }
++         else if (parts[0] == "view")
++         {
++            var was:Boolean = viewing;
++            viewing = parts[1] == "1";
++            if (was && !viewing)
++            {
++               hideOwnHud(false);
++               HudWindow.hide();
++            }
++            else if (viewing && !was)
++            {
++               HudWindow.show();
++            }
++         }
++         else if (parts[0] == "act" && parts.length >= 2 && controlling)
++         {
++            act(String(parts[1]));
++         }
++      }
++
++      /** RotMG's own key for NAME, as if pressed: potions, nexus, inventory slots, interact
++       *  (portals)... all go through the player's own bindings and the client's own checks.
++       *  The ability aims where Doom looks. */
++      private static function act(name:String) : void
++      {
++         // "NAME:down" / "NAME:up": a key held in Doom (Q/E turning the camera), pressed and
++         // released as you do.
++         var half:String = null;
++         if (name.indexOf(":") > 0)
++         {
++            half = name.substr(name.indexOf(":") + 1);
++            name = name.substr(0, name.indexOf(":"));
++         }
++         var player:Player = map != null ? map.player_ : null;
++         if (player == null)
++         {
++            return;
++         }
++         if (name == "useSpecial")
++         {
++            var screen:Number = aim - Parameters.data_.cameraAngle;
++            var xS:Number = Math.cos(screen) * ABILITY_REACH;
++            var yS:Number = Math.sin(screen) * ABILITY_REACH;
++            player.useAltWeapon(xS, yS, UseType.START_USE);
++            player.useAltWeapon(xS, yS, UseType.END_USE);
++            return;
++         }
++         if (!Parameters.data_.hasOwnProperty(name) || !(Parameters.data_[name] is int || Parameters.data_[name] is uint))
++         {
++            return;
++         }
++         var code:uint = Parameters.data_[name];
++         if (map.gs_ == null || map.gs_.stage == null)
++         {
++            return;
++         }
++         if (half != "up")
++         {
++            map.gs_.stage.dispatchEvent(new KeyboardEvent(KeyboardEvent.KEY_DOWN, true, false, 0, code));
++         }
++         if (half != "down")
++         {
++            map.gs_.stage.dispatchEvent(new KeyboardEvent(KeyboardEvent.KEY_UP, true, false, 0, code));
++         }
++      }
++
++      private static function onClose(event:Event) : void
++      {
++         drop();
++      }
++
++      private static function drop() : void
++      {
++         if (viewing)
++         {
++            viewing = false;
++            hideOwnHud(false);
++            HudWindow.hide();
++         }
++         controlling = false;
++         firing = false;
++         moveX = moveY = 0;
++         if (socket == null)
++         {
++            return;
++         }
++         socket.removeEventListener(Event.CONNECT, onConnect);
++         socket.removeEventListener(Event.CLOSE, onClose);
++         socket.removeEventListener(IOErrorEvent.IO_ERROR, onClose);
++         socket.removeEventListener(SecurityErrorEvent.SECURITY_ERROR, onClose);
++         socket.removeEventListener(ProgressEvent.SOCKET_DATA, onData);
++         try
++         {
++            if (socket.connected)
++            {
++               socket.close();
++            }
++         }
++         catch (e:Error)
++         {
++         }
++         socket = null;
++         incoming = "";
++      }
++
++      private static function oneLine(text:String) : String
++      {
++         return text == null ? "" : text.split("\n").join(" ").split("\r").join(" ").split("\t").join(" ");
++      }
++
++      private static function fix(n:Number) : String
++      {
++         return n.toFixed(3);
++      }
++
++      private static function clean(name:String) : String
++      {
++         return name == null || name == "" ? "?" : name.split(" ").join("_");
++      }
++   }
++}
+diff --git a/TK-Client/src/romtg/HudWindow.as b/TK-Client/src/romtg/HudWindow.as
+new file mode 100644
+index 0000000..6278d4a
+--- /dev/null
++++ b/TK-Client/src/romtg/HudWindow.as
+@@ -0,0 +1,398 @@
++package romtg
++{
++   import com.company.assembleegameclient.map.Map;
++   import com.company.assembleegameclient.objects.Character;
++   import com.company.assembleegameclient.objects.GameObject;
++   import com.company.assembleegameclient.objects.Player;
++   import com.company.assembleegameclient.ui.TextBox;
++   import com.company.assembleegameclient.ui.TextBoxLine;
++   import com.company.assembleegameclient.util.TextureRedrawer;
++   import com.company.ui.SimpleText;
++   import com.company.util.AssetLibrary;
++   import flash.display.Bitmap;
++   import flash.display.BitmapData;
++   import flash.display.DisplayObject;
++   import flash.display.NativeWindow;
++   import flash.display.NativeWindowInitOptions;
++   import flash.display.NativeWindowSystemChrome;
++   import flash.display.NativeWindowType;
++   import flash.display.Sprite;
++   import flash.display.StageAlign;
++   import flash.display.StageScaleMode;
++   import flash.filters.DropShadowFilter;
++   import flash.filters.GlowFilter;
++   import flash.geom.Matrix;
++   import flash.geom.Rectangle;
++   import flash.text.engine.TextBlock;
++   import flash.text.engine.TextLine;
++   import flash.utils.getTimer;
++   import kabam.rotmg.ui.view.BossHealthBar;
++
++   /**
++    * ROMTG-Doom: RotMG's own HUD over Doom. A see-through, click-through window (the swapper,
++    * duo.py, finds it by its title and lays it over Doom) holding fresh copies of RotMG's gold
++    * and fame display, boss health bar, chat lines and the status texts over you (XP, level up,
++    * quest done...), drawn by RotMG's own classes so they look exactly as in RotMG. Scaled like
++    * RotMG's own window (its 600-high stage fills the screen's height). While it is up, the
++    * originals in RotMG's play area are hidden (DoomLink.hideOwnHud), so the minimap stays clean.
++    */
++   public class HudWindow
++   {
++      // (logs: DoomLink.log)
++      public static const TITLE:String = "RomtgHud";
++      private static const CHAT_LINES:int = 7;
++      private static const CHAT_MS:int = 20000;
++      /** Chat lines wrap at this width, so they stay clear of your health bar (bottom middle). */
++      private static const CHAT_WIDTH:int = 340;
++      private static const STATUS_MS:int = 1500;
++      /** Where the status texts start (just above your health bar, whose top is at 554), how
++       *  far up they go in their 1.5 s (fading out over the second half) and how far apart ones
++       *  that came together are. */
++      private static const STATUS_FROM:Number = 526;
++      private static const STATUS_RISE:Number = 60;
++      private static const STATUS_GAP:Number = 24;
++
++      private static var window:NativeWindow;
++      private static var root:Sprite;
++      private static var credits:Sprite;
++      private static var coinText:SimpleText;
++      private static var fameText:SimpleText;
++      private static var shownCredits:String = "";
++      /** A copy of the RotMG tooltip you're looking at (Tab, the side panel's inventory), drawn
++       *  here so it shows over Doom; RotMG's own window stays cut down to its side panel. */
++      private static var tipCopy:Bitmap;
++      private static var tipFrom:DisplayObject;
++      private static var tipDrawnAt:int = 0;
++      private static var tipSize:String = "";
++      /** This window's width in RotMG's units (it's 600 high): RotMG's play area (0..600 of its
++       *  stage) ends where this window ends, so a RotMG x is this one's x + (hudWidth - 600). */
++      private static var hudWidth:Number = 600;
++      private static var boss:BossHealthBar;
++      private static var chat:Sprite;
++      private static var statuses:Sprite;
++      private static var shownChat:int = -1;
++      private static var chatAt:int = 0;
++      private static var statusList:Array = [];
++      private static var myHealth:Sprite;
++      private static var myHealthText:SimpleText;
++      private static var shownHealth:String = "";
++      private static var chatShown:String = "";
++      /** Your health bar: RotMG's bar under a character (42x7 back, 40x5 fill), this many times
++       *  bigger, at the bottom middle of the screen, where your character would stand. */
++      private static const MY_BAR:Number = 4;
++
++      public static function show() : void
++      {
++         if (window != null && !window.closed)
++         {
++            window.visible = true;
++            return;
++         }
++         var options:NativeWindowInitOptions = new NativeWindowInitOptions();
++         options.systemChrome = NativeWindowSystemChrome.NONE;
++         options.transparent = true;
++         options.type = NativeWindowType.LIGHTWEIGHT;
++         window = new NativeWindow(options);
++         window.title = TITLE;
++         window.stage.scaleMode = StageScaleMode.NO_SCALE;
++         window.stage.align = StageAlign.TOP_LEFT;
++         window.width = 800;
++         window.height = 600;
++         root = new Sprite();
++         root.mouseEnabled = root.mouseChildren = false;
++         window.stage.addChild(root);
++         credits = makeCredits();
++         root.addChild(credits);
++         boss = new BossHealthBar();
++         boss.visible = false;
++         root.addChild(boss);
++         chat = new Sprite();
++         chat.filters = [new GlowFilter(0, 1, 3, 3, 2, 1)];
++         root.addChild(chat);
++         statuses = new Sprite();
++         root.addChild(statuses);
++         myHealth = new Sprite();
++         root.addChild(myHealth);
++         myHealthText = new SimpleText(14, 0xFFFFFF, false, 0, 0);
++         myHealthText.setBold(true);
++         myHealthText.filters = [new GlowFilter(0, 1, 3, 3, 2, 1)];
++         root.addChild(myHealthText);
++         tipCopy = new Bitmap();
++         tipCopy.visible = false;
++         root.addChild(tipCopy);   // last: over everything else
++         tipFrom = null;
++         shownCredits = "";
++         shownHealth = "";
++         chatShown = "";
++         shownChat = -1;
++         window.visible = true;   // shown, not activated: the swapper keeps it from taking focus
++      }
++
++      public static function hide() : void
++      {
++         if (window != null && !window.closed)
++         {
++            window.visible = false;
++         }
++         statusList = [];
++         if (statuses != null)
++         {
++            statuses.removeChildren();
++         }
++         tooltip(null, false);
++      }
++
++      /** Gold and fame as RotMG shows them (its coin and fame icons with the numbers to their
++       *  left), made here with icons of its own: CreditDisplay's shared, cached ones didn't show
++       *  in this window (2026-11-12). */
++      private static function makeCredits() : Sprite
++      {
++         var s:Sprite = new Sprite();
++         var coin:Bitmap = new Bitmap(TextureRedrawer.redraw(AssetLibrary.getImageFromSet("lofiObj3", 225), 40, true, 0, false));
++         var fame:Bitmap = new Bitmap(TextureRedrawer.redraw(AssetLibrary.getImageFromSet("lofiObj3", 224), 40, true, 0, false));
++         coin.name = "coin";
++         fame.name = "fame";
++         s.addChild(coin);
++         s.addChild(fame);
++         coinText = new SimpleText(18, 0xFFFFFF, false, 0, 0);
++         coinText.filters = [new DropShadowFilter(0, 0, 0, 1, 4, 4, 2)];
++         fameText = new SimpleText(18, 0xFFFFFF, false, 0, 0);
++         fameText.filters = [new DropShadowFilter(0, 0, 0, 1, 4, 4, 2)];
++         s.addChild(coinText);
++         s.addChild(fameText);
++         return s;
++      }
++
++      private static function drawCredits(gold:int, fame:int) : void
++      {
++         var key:String = gold + "/" + fame;
++         if (key == shownCredits)
++         {
++            return;
++         }
++         shownCredits = key;
++         var coin:DisplayObject = credits.getChildByName("coin");
++         var icon:DisplayObject = credits.getChildByName("fame");
++         coin.x = -coin.width;
++         coin.y = 0;
++         coinText.text = gold.toString();
++         coinText.updateMetrics();
++         coinText.x = coin.x - coinText.width + 8;
++         coinText.y = coin.height / 2 - coinText.height / 2;
++         icon.x = -icon.width;
++         fameText.text = fame.toString();
++         fameText.updateMetrics();
++         fameText.x = icon.x - fameText.width + 8;
++         fameText.y = coinText.height + 4 + icon.height / 2 - fameText.height / 2;
++         icon.y = fameText.y - icon.height / 2 + 8;
++      }
++
++      /** RotMG's tooltip `tip` moved or changed (or went, `showing` false): copied over here. */
++      public static function tooltip(tip:DisplayObject, showing:Boolean, at:Rectangle = null) : void
++      {
++         if (tipCopy == null)
++         {
++            return;
++         }
++         if (!showing || at == null || tip == null || tip.stage == null || window == null || window.closed || !window.visible)
++         {
++            if (tip == null || tip == tipFrom)
++            {
++               tipCopy.visible = false;
++               tipFrom = null;
++            }
++            return;
++         }
++         var b:Rectangle = tip.getBounds(tip);
++         var size:String = int(b.width) + "x" + int(b.height);
++         var now:int = getTimer();
++         if (tip != tipFrom || size != tipSize || now - tipDrawnAt > 250)
++         {
++            if (b.width < 1 || b.height < 1)
++            {
++               return;
++            }
++            var bd:BitmapData = new BitmapData(Math.ceil(b.width), Math.ceil(b.height), true, 0);
++            bd.draw(tip, new Matrix(1, 0, 0, 1, -b.x, -b.y));
++            if (tipCopy.bitmapData != null)
++            {
++               tipCopy.bitmapData.dispose();
++            }
++            tipCopy.bitmapData = bd;
++            tipCopy.filters = tip.filters;
++            tipFrom = tip;
++            tipSize = size;
++            tipDrawnAt = now;
++         }
++         // `at`: where RotMG shows it, in its 800x600 units (DoomLink.inRotmgUnits).
++         tipCopy.scaleX = b.width > 0 ? at.width / b.width : 1;
++         tipCopy.scaleY = b.height > 0 ? at.height / b.height : 1;
++         tipCopy.x = at.x + (hudWidth - 600);
++         tipCopy.y = at.y;
++         if (!tipCopy.visible && tipsLogged < 8)
++         {
++            tipsLogged++;
++            DoomLink.log("tooltip copy at " + int(tipCopy.x) + "," + int(tipCopy.y) + " size " + size
++               + " in a HUD " + int(hudWidth) + " wide (scale " + root.scaleX.toFixed(2) + "), window "
++               + window.bounds + (window.visible ? " shown" : " HIDDEN"));
++         }
++         tipCopy.visible = true;
++      }
++
++      private static var tipsLogged:int = 0;
++
++      /** A status text over you in RotMG: the same words, colour and look, rising and fading. */
++      public static function status(label:String, color:uint) : void
++      {
++         if (window == null || window.closed || !window.visible)
++         {
++            return;
++         }
++         var t:SimpleText = new SimpleText(20, color, false, 0, 0);
++         t.setBold(true);
++         t.text = label;
++         t.updateMetrics();
++         t.filters = [new GlowFilter(0, 1, 4, 4, 2, 1)];
++         t.x = -t.width / 2;   // centred over your health bar
++         var holder:Sprite = new Sprite();
++         holder.addChild(t);
++         statuses.addChild(holder);
++         statusList.push({sprite: holder, at: getTimer()});
++      }
++
++      /** Once a frame while Doom is up. */
++      public static function update(map:Map, player:Player, now:int) : void
++      {
++         if (window == null || window.closed || !window.visible || root == null)
++         {
++            return;
++         }
++         var sw:Number = window.stage.stageWidth, sh:Number = window.stage.stageHeight;
++         if (sw <= 0 || sh <= 0)
++         {
++            return;
++         }
++         var k:Number = sh / 600;
++         root.scaleX = root.scaleY = k;
++         var w:Number = sw / k;   // the window's width in RotMG's own units
++         hudWidth = w;
++
++         // Gold and fame: top right, as RotMG has them next to its side panel.
++         credits.x = w - 6;
++         credits.y = 0;
++         drawCredits(player.credits_, player.fame_);
++
++         // The boss bar: RotMG's quest, top left.
++         var quest:GameObject = map.quest_ != null ? map.quest_.getObject(now) : null;
++         boss.x = 10;
++         boss.y = 10;
++         boss.setGameObject(quest);
++         if (quest != null)
++         {
++            boss.visible = true;
++         }
++         boss.draw();
++
++         // Chat: RotMG's lines, bottom left, gone after 20 seconds as in RotMG.
++         drawChat(now, 600);
++
++         // Your own health, as RotMG shows it under your character: bottom middle.
++         drawMyHealth(player, w);
++
++         // Status texts over you (+EXP, healing...): just above your health bar at the bottom,
++         // where RotMG shows them over your character, rising and fading. Ones that came
++         // together stack upwards.
++         for (var i:int = statusList.length - 1; i >= 0; i--)
++         {
++            if (now - statusList[i].at >= STATUS_MS)
++            {
++               statuses.removeChild(statusList[i].sprite);
++               statusList.splice(i, 1);
++            }
++         }
++         var below:Number = 1e9;
++         for (i = statusList.length - 1; i >= 0; i--)
++         {
++            var s:Object = statusList[i];
++            var age:Number = (now - s.at) / STATUS_MS;
++            var sy:Number = Math.min(STATUS_FROM - age * STATUS_RISE, below - STATUS_GAP);
++            below = sy;
++            s.sprite.x = w / 2;
++            s.sprite.y = sy;
++            s.sprite.alpha = age < 0.5 ? 1 : Math.max(0, (1 - age) / 0.5);
++         }
++      }
++
++      private static function drawMyHealth(player:Player, w:Number) : void
++      {
++         var key:String = player.hp_ + "/" + player.maxHP_ + "@" + int(w);
++         if (key == shownHealth)
++         {
++            return;
++         }
++         shownHealth = key;
++         var g:* = myHealth.graphics;
++         g.clear();
++         var bw:Number = 40 * MY_BAR, bh:Number = 5 * MY_BAR, x:Number = w / 2 - bw / 2, y:Number = 600 - 46;
++         // The empty part dark and see-through, and only a hairline (one screen pixel) round it.
++         g.beginFill(0x111111, 0.55);
++         g.drawRect(x, y, bw, bh);
++         g.endFill();
++         var frac:Number = player.maxHP_ > 0 ? Math.max(0, Math.min(1, player.hp_ / player.maxHP_)) : 0;
++         if (frac > 0)
++         {
++            g.beginFill(Character.green2redu(uint(frac * 100)));
++            g.drawRect(x, y, bw * frac, bh);
++            g.endFill();
++         }
++         g.lineStyle(0, 0x000000, 0.8);
++         g.drawRect(x, y, bw, bh);
++         g.lineStyle();
++         myHealthText.text = player.hp_ + "/" + player.maxHP_;
++         myHealthText.updateMetrics();
++         myHealthText.x = w / 2 - myHealthText.width / 2;
++         myHealthText.y = y + bh / 2 - myHealthText.height / 2;
++      }
++
++      private static function drawChat(now:int, h:Number) : void
++      {
++         // Redrawn only when what it shows changes (a line came, or one timed out): redrawing it
++         // every second made it flicker.
++         var lines:Vector.<TextBoxLine> = TextBox.allLines;
++         var first:int = Math.max(0, lines.length - CHAT_LINES);
++         var shows:String = lines.length + ":";
++         for (var j:int = first; j < lines.length; j++)
++         {
++            shows += now > lines[j].time_ + CHAT_MS ? "0" : "1";
++         }
++         if (shows == chatShown)
++         {
++            return;
++         }
++         chatShown = shows;
++         chat.removeChildren();
++         var y:Number = 0;
++         for (var i:int = first; i < lines.length; i++)
++         {
++            var line:TextBoxLine = lines[i];
++            if (now > line.time_ + CHAT_MS)
++            {
++               continue;
++            }
++            var block:TextBlock = line.getTextBlock();
++            var text:TextLine = null;
++            var top:Number = y;
++            while ((text = block.createTextLine(text, y == top ? CHAT_WIDTH - 4 : CHAT_WIDTH - 24)) != null)
++            {
++               text.x = y == top ? 0 : 20;
++               text.y = text.ascent + y;
++               y += Math.max(16, text.height);
++               chat.addChild(text);
++            }
++            y += 4;
++         }
++         chat.x = 2;
++         chat.y = h - y + 4;   // flush with the bottom-left corner, as RotMG has it
++      }
++   }
++}
+diff --git a/TK-Client/src/romtg/RealmArt.as b/TK-Client/src/romtg/RealmArt.as
+new file mode 100644
+index 0000000..0429aa2
+--- /dev/null
++++ b/TK-Client/src/romtg/RealmArt.as
+@@ -0,0 +1,87 @@
++package romtg
++{
++   import flash.display.Bitmap;
++   import flash.display.DisplayObject;
++   import flash.display.Loader;
++   import flash.display.Sprite;
++   import flash.events.Event;
++   import flash.events.IOErrorEvent;
++   import flash.net.URLRequest;
++
++   /**
++    * ROMTG-Doom: Realm of the Mad God's own title art, taken from your Exalt install when the
++    * client is built (rotmg-doom/scripts/exalt.py -> assets/realm-*.png next to the client; never
++    * part of this repo) and loaded here at run time. Without it: the name as text (RealmTitle).
++    */
++   public class RealmArt
++   {
++      /** The logo, centred on (cx, top), at most `width` wide. */
++      public static function logo(cx:Number, top:Number, width:Number) : Sprite
++      {
++         var holder:Sprite = new Sprite();
++         holder.mouseEnabled = holder.mouseChildren = false;
++         load("app:/assets/realm-logo.png", holder, function(art:DisplayObject):void
++         {
++            art.width = width;
++            art.scaleY = art.scaleX;
++            art.x = cx - art.width / 2;
++            art.y = top;
++         }, function():void
++         {
++            var title:RealmTitle = new RealmTitle();
++            title.x = cx;
++            title.y = top + 30;
++            holder.addChild(title);
++         });
++         return holder;
++      }
++
++      /** The title background, covering the 800x600 stage (cropped to keep its shape). */
++      public static function background() : Sprite
++      {
++         var holder:Sprite = new Sprite();
++         holder.mouseEnabled = holder.mouseChildren = false;
++         load("app:/assets/realm-title-bg.png", holder, function(art:DisplayObject):void
++         {
++            var k:Number = Math.max(800 / art.width, 600 / art.height);
++            art.scaleX = art.scaleY = k;
++            art.x = (800 - art.width) / 2;
++            art.y = (600 - art.height) / 2;
++         }, null);
++         return holder;
++      }
++
++      private static function load(url:String, holder:Sprite, place:Function, fallback:Function) : void
++      {
++         var loader:Loader = new Loader();
++         loader.contentLoaderInfo.addEventListener(Event.COMPLETE, function(e:Event):void
++         {
++            var art:DisplayObject = loader.content;
++            if (art is Bitmap)
++            {
++               (art as Bitmap).smoothing = true;
++            }
++            place(art);
++            holder.addChild(art);
++         });
++         loader.contentLoaderInfo.addEventListener(IOErrorEvent.IO_ERROR, function(e:Event):void
++         {
++            if (fallback != null)
++            {
++               fallback();
++            }
++         });
++         try
++         {
++            loader.load(new URLRequest(url));
++         }
++         catch (e:Error)
++         {
++            if (fallback != null)
++            {
++               fallback();
++            }
++         }
++      }
++   }
++}
+diff --git a/TK-Client/src/romtg/RealmTitle.as b/TK-Client/src/romtg/RealmTitle.as
+new file mode 100644
+index 0000000..f7d7a59
+--- /dev/null
++++ b/TK-Client/src/romtg/RealmTitle.as
+@@ -0,0 +1,37 @@
++package romtg
++{
++   import com.company.ui.SimpleText;
++   import flash.display.Sprite;
++   import flash.filters.DropShadowFilter;
++   import flash.filters.GlowFilter;
++
++   /**
++    * ROMTG-Doom: the game's name on the title screen, in the client's own font, where Talisman
++    * Kingdom's logo was. (Realm of the Mad God's logo image isn't among the client's files.)
++    */
++   public class RealmTitle extends Sprite
++   {
++      public function RealmTitle()
++      {
++         super();
++         var top:SimpleText = line("Realm of the", 34);
++         var bottom:SimpleText = line("Mad God", 64);
++         top.x = -top.width / 2;
++         bottom.x = -bottom.width / 2;
++         bottom.y = top.height - 10;
++         addChild(top);
++         addChild(bottom);
++         mouseEnabled = mouseChildren = false;
++      }
++
++      private static function line(text:String, size:int) : SimpleText
++      {
++         var t:SimpleText = new SimpleText(size, 0xF2C14E, false, 0, 0);
++         t.setBold(true);
++         t.text = text;
++         t.updateMetrics();
++         t.filters = [new GlowFilter(0x5A1408, 1, 6, 6, 8, 1), new DropShadowFilter(4, 45, 0, 0.8, 6, 6, 1)];
++         return t;
++      }
++   }
++}

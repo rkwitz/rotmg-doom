@@ -1,0 +1,71 @@
+diff --git a/TK-Client/src/com/company/assembleegameclient/objects/particles/ExplosionEffect.as b/TK-Client/src/com/company/assembleegameclient/objects/particles/ExplosionEffect.as
+index 19466c2..7fd484b 100644
+--- a/TK-Client/src/com/company/assembleegameclient/objects/particles/ExplosionEffect.as
++++ b/TK-Client/src/com/company/assembleegameclient/objects/particles/ExplosionEffect.as
+@@ -1,5 +1,6 @@
+ package com.company.assembleegameclient.objects.particles
+ {
++   import romtg.DoomLink;
+    public class ExplosionEffect extends ParticleEffect
+    {
+        
+@@ -24,6 +25,8 @@ package com.company.assembleegameclient.objects.particles
+          {
+             return false;
+          }
++         // ROMTG-Doom: the same burst in Doom (random moves up to 0.5 x 0.008 tiles a ms).
++         DoomLink.burst(x_, y_, this.colors_, this.numParts_, size_, 0, 0, 0.5 * 8);
+          for(var i:int = 0; i < this.numParts_; i++)
+          {
+             color = this.colors_[int(this.colors_.length * Math.random())];
+diff --git a/TK-Client/src/com/company/assembleegameclient/objects/particles/HitEffect.as b/TK-Client/src/com/company/assembleegameclient/objects/particles/HitEffect.as
+index f185a39..4260878 100644
+--- a/TK-Client/src/com/company/assembleegameclient/objects/particles/HitEffect.as
++++ b/TK-Client/src/com/company/assembleegameclient/objects/particles/HitEffect.as
+@@ -1,6 +1,7 @@
+ package com.company.assembleegameclient.objects.particles
+ {
+ import com.company.assembleegameclient.parameters.Parameters;
++import romtg.DoomLink;
+ 
+ public class HitEffect extends ParticleEffect
+    {
+@@ -35,6 +36,8 @@ public class HitEffect extends ParticleEffect
+          }
+          var moveVecX:Number = this.speed_ / 600 * Math.cos(this.angle_ + Math.PI);
+          var moveVecY:Number = this.speed_ / 600 * Math.sin(this.angle_ + Math.PI);
++         // ROMTG-Doom: the same burst in Doom (moves are tiles per ms / 0.008: x8 a second).
++         DoomLink.burst(x_, y_, this.colors_, this.numParts_, size_, moveVecX * 8, moveVecY * 8, 0.2 * 8);
+          for(var i:int = 0; i < this.numParts_; i++)
+          {
+             color = this.colors_[int(this.colors_.length * Math.random())];
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index 8d49cb8..14bb997 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -325,6 +325,25 @@ package romtg
+          return cut.width * cut.height / (600 * 600);
+       }
+ 
++      /** A burst of particles (a shot hitting a wall or an enemy, something dying: RotMG's
++       *  HitEffect and ExplosionEffect) for Doom to draw too, while it shows the game:
++       *  `burst X Y N SIZE VX VY SPREAD RGB,RGB...` (tiles, tiles a second; Ryan, 2026-11-15). */
++      public static function burst(x:Number, y:Number, colors:Vector.<uint>, n:int, size:int,
++                                   vx:Number, vy:Number, spread:Number) : void
++      {
++         if (!viewing || colors == null || colors.length == 0 || n <= 0)
++         {
++            return;
++         }
++         var list:Array = [];
++         for (var i:int = 0; i < colors.length && i < 4; i++)
++         {
++            list.push(uint(colors[int(Math.random() * colors.length)]).toString(16));
++         }
++         send("burst " + fix(x) + " " + fix(y) + " " + Math.min(n, 12) + " " + size + " " + vx.toFixed(2) + " "
++            + vy.toFixed(2) + " " + spread.toFixed(2) + " " + list.join(","));
++      }
++
+       /** `modal ...` for the open dialog or popup (see the header), moved first to the middle
+        *  of Doom's view while Doom shows the game (Ryan, 2026-11-15: just the dialog, centred). */
+       private static function dialogLine() : String

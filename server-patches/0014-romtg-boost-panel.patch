@@ -1,0 +1,55 @@
+diff --git a/TK-Client/src/com/company/assembleegameclient/ui/BoostPanelButton.as b/TK-Client/src/com/company/assembleegameclient/ui/BoostPanelButton.as
+index 3ba3267..aa973d3 100644
+--- a/TK-Client/src/com/company/assembleegameclient/ui/BoostPanelButton.as
++++ b/TK-Client/src/com/company/assembleegameclient/ui/BoostPanelButton.as
+@@ -8,6 +8,7 @@ import flash.display.BitmapData;
+ import flash.display.Sprite;
+ import flash.events.Event;
+ import flash.events.MouseEvent;
++import flash.geom.Point;
+ 
+ public class BoostPanelButton extends Sprite {
+ 
+@@ -32,19 +33,37 @@ public class BoostPanelButton extends Sprite {
+     }
+ 
+     private function onButtonOver(_arg1:Event):void {
+-        addChild((this.boostPanel = new BoostPanel(this.player)));
++        this.boostPanel = new BoostPanel(this.player);
++        // ROMTG-Doom: on top of everything (the stage), not under the stat bars drawn after
++        // this button (Ryan, 2026-11-15: they covered it), at this button's scale.
++        if (stage != null) {
++            stage.addChild(this.boostPanel);
++        } else {
++            addChild(this.boostPanel);
++        }
+         this.boostPanel.resized.add(this.positionBoostPanel);
+         this.positionBoostPanel();
+     }
+ 
++    // ROMTG-Doom: the boost list (XP booster, loot potion timers) opens down and to the right,
++    // inside the side panel. Up and to the left it opened over the play area, which Doom
++    // covers: only its white outline peeked out by the map (Ryan, 2026-11-15).
+     private function positionBoostPanel():void {
+-        this.boostPanel.x = -(this.boostPanel.width);
+-        this.boostPanel.y = -(this.boostPanel.height);
++        if (this.boostPanel.parent == this) {
++            this.boostPanel.x = -7;
++            this.boostPanel.y = 14;
++            return;
++        }
++        var at:Point = localToGlobal(new Point(-7, 14));
++        var scale:Number = transform.concatenatedMatrix.a;
++        this.boostPanel.scaleX = this.boostPanel.scaleY = scale;
++        this.boostPanel.x = at.x;
++        this.boostPanel.y = at.y;
+     }
+ 
+     private function onButtonOut(_arg1:Event):void {
+-        if (this.boostPanel) {
+-            removeChild(this.boostPanel);
++        if (this.boostPanel && this.boostPanel.parent) {
++            this.boostPanel.parent.removeChild(this.boostPanel);
+         }
+     }
+ 

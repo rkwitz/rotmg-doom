@@ -1,0 +1,25 @@
+diff --git a/TK-Client/src/com/company/assembleegameclient/game/GameSprite.as b/TK-Client/src/com/company/assembleegameclient/game/GameSprite.as
+index e826b71..9544ef0 100644
+--- a/TK-Client/src/com/company/assembleegameclient/game/GameSprite.as
++++ b/TK-Client/src/com/company/assembleegameclient/game/GameSprite.as
+@@ -4,6 +4,7 @@ import com.company.assembleegameclient.map.Camera;
+ import com.company.assembleegameclient.map.Map;
+ import com.company.assembleegameclient.objects.GameObject;
+ import com.company.assembleegameclient.objects.IInteractiveObject;
++import romtg.pets.RomtgPet;
+ import com.company.assembleegameclient.objects.ObjectLibrary;
+ import com.company.assembleegameclient.objects.Player;
+ import com.company.assembleegameclient.objects.Projectile;
+@@ -256,6 +257,12 @@ public class GameSprite extends Sprite
+       for each(go in this.map.goDict_)
+       {
+          iObj = go as IInteractiveObject;
++         // ROMTG-Doom: your pet has a panel in the Pet Yard only (as RotMG); following you
++         // anywhere else it took the panel from the loot bags beside you (Ryan, 2026-11-16).
++         if(iObj && go is RomtgPet && this.map.name_ != "Pet Yard")
++         {
++            iObj = null;
++         }
+          if(iObj)
+          {
+             if(Math.abs(playerX - go.x_) < GeneralConstants.MAXIMUM_INTERACTION_DISTANCE || Math.abs(playerY - go.y_) < GeneralConstants.MAXIMUM_INTERACTION_DISTANCE)

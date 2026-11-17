@@ -1,0 +1,57 @@
+diff --git a/TK-Client/src/kabam/rotmg/game/view/GameSpriteMediator.as b/TK-Client/src/kabam/rotmg/game/view/GameSpriteMediator.as
+index 8d854f8..e4ecd72 100644
+--- a/TK-Client/src/kabam/rotmg/game/view/GameSpriteMediator.as
++++ b/TK-Client/src/kabam/rotmg/game/view/GameSpriteMediator.as
+@@ -9,6 +9,8 @@ package kabam.rotmg.game.view
+    import kabam.rotmg.core.signals.SetScreenSignal;
+    import kabam.rotmg.core.signals.SetScreenWithValidDataSignal;
+    import kabam.rotmg.dialogs.control.CloseDialogsSignal;
++   import io.decagames.rotmg.ui.popups.PopupView;
++   import io.decagames.rotmg.ui.popups.signals.CloseAllPopupsSignal;
+    import kabam.rotmg.game.model.GameInitData;
+    import kabam.rotmg.game.signals.DisconnectGameSignal;
+    import kabam.rotmg.game.signals.GameClosedSignal;
+@@ -52,6 +54,9 @@ package kabam.rotmg.game.view
+       
+       [Inject]
+       public var closeDialogs:CloseDialogsSignal;
++
++      [Inject]
++      public var closeAllPopups:CloseAllPopupsSignal;
+       
+       [Inject]
+       public var disconnect:DisconnectGameSignal;
+@@ -117,6 +122,11 @@ package kabam.rotmg.game.view
+          {
+             return;
+          }
++         // ROMTG-Doom: a new map (the Nexus button, a portal) closes what was open on the old
++         // one; the potion storage stayed open over the Nexus (Ryan, 2026-11-16).
++         this.closeDialogs.dispatch();
++         this.closeAllPopups.dispatch();
++         if (PopupView.instance != null) PopupView.instance.removeFade();
+          var data:GameInitData = new GameInitData();
+          data.server = event.server_;
+          data.gameId = event.gameId_;
+diff --git a/TK-Client/src/kabam/rotmg/ui/UIConfig.as b/TK-Client/src/kabam/rotmg/ui/UIConfig.as
+index d9e7e35..e2e4c49 100644
+--- a/TK-Client/src/kabam/rotmg/ui/UIConfig.as
++++ b/TK-Client/src/kabam/rotmg/ui/UIConfig.as
+@@ -33,6 +33,7 @@ import io.decagames.rotmg.ui.popups.modal.buttons.BuyGoldButtonMediator;
+ import io.decagames.rotmg.ui.popups.modal.buttons.CancelButtonMediator;
+ import io.decagames.rotmg.ui.popups.modal.buttons.ClosePopupButton;
+ import io.decagames.rotmg.ui.popups.signals.ClosePopupSignal;
++import io.decagames.rotmg.ui.popups.signals.CloseAllPopupsSignal;
+ import io.decagames.rotmg.ui.scroll.UIScrollbar;
+ import io.decagames.rotmg.ui.scroll.UIScrollbarMediator;
+ import io.decagames.rotmg.ui.spinner.NumberSpinner;
+@@ -213,6 +214,9 @@ public class UIConfig implements IConfig
+ 
+    private function uiDECA():void{
+       this.injector.map(ClosePopupSignal).asSingleton();
++      // ROMTG-Doom: one shared, so GameSpriteMediator closing all popups on a new map reaches
++      // PopupMediator (unmapped, each got its own and it did nothing).
++      this.injector.map(CloseAllPopupsSignal).asSingleton();
+       this.mediatorMap.map(UIScrollbar).toMediator(UIScrollbarMediator);
+       this.mediatorMap.map(UITab).toMediator(UITabMediator);
+       this.mediatorMap.map(PopupView).toMediator(PopupMediator);

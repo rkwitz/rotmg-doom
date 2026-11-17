@@ -1,0 +1,87 @@
+diff --git a/TK-Server/TKR.WorldServer/logic/loot/Loots.cs b/TK-Server/TKR.WorldServer/logic/loot/Loots.cs
+index 4b2adf8..8e72c2d 100644
+--- a/TK-Server/TKR.WorldServer/logic/loot/Loots.cs
++++ b/TK-Server/TKR.WorldServer/logic/loot/Loots.cs
+@@ -109,6 +109,42 @@ namespace TKR.WorldServer.logic.loot
+             Items = Items.OrderBy(_ => _.Key).ToDictionary(_ => _.Key, _ => _.Value);
+         }
+ 
++        /// <summary>ROMTG-Doom: the power every drop chance is raised to (ROMTGDOOM_LOOT_POWER, default 0.7).
++        /// Below 1 it compresses the odds: rare drops gain a lot, common ones a little, and their
++        /// order stays (8%/4%/2%/1% become 17%/10.5%/6.5%/4% at 0.7). 1 is the stock game.</summary>
++        public static readonly double LootPower =
++            double.TryParse(Environment.GetEnvironmentVariable("ROMTGDOOM_LOOT_POWER"), System.Globalization.NumberStyles.Float,
++                System.Globalization.CultureInfo.InvariantCulture, out var k) && k > 0 && k <= 1 ? k : 0.7;
++
++        /// <summary>ROMTG-Doom: a drop chance with the odds compressed (see LootPower).</summary>
++        public static double Compress(double probability) =>
++            probability <= 0 || probability >= 1 ? probability : Math.Pow(probability, LootPower);
++
++        /// <summary>ROMTG-Doom pets: RotMG's egg drops (RealmEye wiki, Pet Eggs and Loot
++        /// Containers, read 2026-11-12): eggs drop in an "egg basket" from realm gods, event
++        /// bosses and dungeon bosses only. Gods drop common and uncommon eggs; event and dungeon
++        /// bosses drop all four rarities; legendary eggs are the rarest drop in the game ("rarer
++        /// than event white bags"). Deca never published the rates and no server code with them
++        /// is public, so these stock chances are estimates kept in that order; each then goes
++        /// through Compress like every other drop. Before / after compression (0.7):
++        ///   god:  common 2% (6.5%), uncommon 0.5% (2.4%)
++        ///   boss: common 5% (12.3%), uncommon 2% (6.5%), rare 0.5% (2.4%), legendary 0.05% (0.5%)</summary>
++        private static readonly (PRarity Rarity, double God, double Boss)[] EggChances =
++        {
++            (PRarity.Common, 0.02, 0.05),
++            (PRarity.Uncommon, 0.005, 0.02),
++            (PRarity.Rare, 0, 0.005),
++            (PRarity.Legendary, 0, 0.0005),
++        };
++
++        /// <summary>An egg of RARITY, of a random family; null if there's none.</summary>
++        private static string RandomPetEgg(XmlData gameData, PRarity rarity)
++        {
++            var eggs = gameData.Items.Values.Where(i => i.Rarity == rarity &&
++                i.ActivateEffects.Any(a => a.Effect == ActivateEffects.CreatePet)).ToArray();
++            return eggs.Length == 0 ? null : eggs[Random.Shared.Next(eggs.Length)].ObjectId;
++        }
++
+         public static double GetPlayerLootBoost(Player player)
+         {
+             if (player == null)
+@@ -144,6 +180,21 @@ namespace TKR.WorldServer.logic.loot
+             var xmlitem = gameData.Items;
+             var itemtoid = gameData.IdToObjectType;
+ 
++            // ROMTG-Doom pets: eggs as in RotMG (see EggChances): event bosses (TK's encounters)
++            // and dungeon bosses (quest enemies outside the realm) all four rarities, realm gods
++            // common and uncommon, nothing else. Each rarity its own roll, soulbound like RotMG's
++            // egg basket (to whoever did enough damage).
++            var boss = enemy.ObjectDesc.Encounter || enemy.ObjectDesc.Quest && !(enemy.World is RealmWorld);
++            var god = !boss && enemy.ObjectDesc.God;
++            if (boss || god)
++                foreach (var (rarity, godChance, bossChance) in EggChances)
++                {
++                    var chance = boss ? bossChance : godChance;
++                    var egg = chance > 0 ? RandomPetEgg(gameData, rarity) : null;
++                    if (egg != null)
++                        list.Add(new LootDef(egg, chance, 0.001));
++                }
++
+             if (enemy.Legendary)
+             {
+                 list.Add(new LootDef("Glowing Shard", 0.20, 0.001)); // 8%
+@@ -204,7 +255,7 @@ namespace TKR.WorldServer.logic.loot
+                     continue;
+                 
+                 var chance = Random.Shared.NextDouble();
+-                if (i.Threshold <= 0 && chance < i.Probabilty)
++                if (i.Threshold <= 0 && chance < Compress(i.Probabilty))
+                 {
+                     var items = GetItems(i.ItemType, i.Tier);
+                     var chosenTieredItem = items[Random.Shared.Next(items.Count)];
+@@ -244,7 +295,7 @@ namespace TKR.WorldServer.logic.loot
+                 {
+                     var c = Random.Shared.NextDouble();
+ 
+-                    var probability = i.Probabilty + i.Probabilty * playerLootBoost;
++                    var probability = Compress(i.Probabilty) * (1 + playerLootBoost);
+ 
+                     if (i.Threshold >= 0 && i.Threshold < percentageOfDamage)
+                     {

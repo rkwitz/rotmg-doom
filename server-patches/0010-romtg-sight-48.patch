@@ -1,0 +1,59 @@
+diff --git a/TK-Server/TKR.WorldServer/core/objects/player/PlayerUpdate.cs b/TK-Server/TKR.WorldServer/core/objects/player/PlayerUpdate.cs
+index 76abbfb..8a1f1ea 100644
+--- a/TK-Server/TKR.WorldServer/core/objects/player/PlayerUpdate.cs
++++ b/TK-Server/TKR.WorldServer/core/objects/player/PlayerUpdate.cs
+@@ -14,7 +14,13 @@ namespace TKR.WorldServer.core.objects.player
+     public sealed class PlayerUpdate
+     {
+         public const int VISIBILITY_CIRCUMFERENCE_SQR = (VISIBILITY_RADIUS - 2) * (VISIBILITY_RADIUS - 2);
+-        public const int VISIBILITY_RADIUS = 15;
++        // ROMTG-Doom: what the server sends you (tiles, objects, shots) reaches 48 tiles, not
++        // RotMG's 15, so Doom can draw that far (Ryan, 2026-11-13). Enemies' AI runs at least
++        // 48 tiles round every player (CollisionMap's active chunks), so everything sent moves.
++        // Gameplay checks that used this radius (spawning near players...) keep RotMG's 15:
++        // NEARBY_RADIUS.
++        public const int VISIBILITY_RADIUS = 48;
++        public const int NEARBY_RADIUS = 15;
+         public const int VISIBILITY_RADIUS_SQR = VISIBILITY_RADIUS * VISIBILITY_RADIUS;
+ 
+         public Player Player { get; private set; }
+diff --git a/TK-Server/TKR.WorldServer/utils/EntityUtils.cs b/TK-Server/TKR.WorldServer/utils/EntityUtils.cs
+index ae1512b..cf03675 100644
+--- a/TK-Server/TKR.WorldServer/utils/EntityUtils.cs
++++ b/TK-Server/TKR.WorldServer/utils/EntityUtils.cs
+@@ -15,7 +15,7 @@ namespace TKR.WorldServer.utils
+ {
+     public static class EntityUtils
+     {
+-        public static bool AnyEnemyNearby(this Entity entity, int radius = PlayerUpdate.VISIBILITY_RADIUS)
++        public static bool AnyEnemyNearby(this Entity entity, int radius = PlayerUpdate.NEARBY_RADIUS)
+         {
+             foreach (var i in entity.World.EnemiesCollision.HitTest(entity.X, entity.Y, radius))
+             {
+@@ -30,7 +30,7 @@ namespace TKR.WorldServer.utils
+             return false;
+         }
+ 
+-        public static bool AnyEnemyNearby(this World world, float x, float y, int radius = PlayerUpdate.VISIBILITY_RADIUS)
++        public static bool AnyEnemyNearby(this World world, float x, float y, int radius = PlayerUpdate.NEARBY_RADIUS)
+         {
+             foreach (var i in world.EnemiesCollision.HitTest(x, y, radius))
+             {
+@@ -45,7 +45,7 @@ namespace TKR.WorldServer.utils
+             return false;
+         }
+ 
+-        public static bool AnyPlayerNearby(this Entity entity, int radius = PlayerUpdate.VISIBILITY_RADIUS)
++        public static bool AnyPlayerNearby(this Entity entity, int radius = PlayerUpdate.NEARBY_RADIUS)
+         {
+             foreach (var i in entity.World.PlayersCollision.HitTest(entity.X, entity.Y, radius).Where(e => e is Player))
+             {
+@@ -61,7 +61,7 @@ namespace TKR.WorldServer.utils
+             return false;
+         }
+ 
+-        public static bool AnyPlayerNearby(this World world, float x, float y, int radius = PlayerUpdate.VISIBILITY_RADIUS)
++        public static bool AnyPlayerNearby(this World world, float x, float y, int radius = PlayerUpdate.NEARBY_RADIUS)
+         {
+             foreach (var i in world.PlayersCollision.HitTest(x, y, radius).Where(e => e is Player))
+             {

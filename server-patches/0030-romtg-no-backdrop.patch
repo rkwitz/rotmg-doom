@@ -1,0 +1,48 @@
+diff --git a/TK-Client/src/io/decagames/rotmg/ui/popups/PopupView.as b/TK-Client/src/io/decagames/rotmg/ui/popups/PopupView.as
+index db926dd..469c955 100644
+--- a/TK-Client/src/io/decagames/rotmg/ui/popups/PopupView.as
++++ b/TK-Client/src/io/decagames/rotmg/ui/popups/PopupView.as
+@@ -18,6 +18,12 @@ package io.decagames.rotmg.ui.popups
+       // ROMTG-Doom: the one in the game, for romtg.DoomLink to see whether a popup is open.
+       public static var instance:PopupView;
+ 
++      /** ROMTG-Doom: no gray fade behind popups while they show over Doom (see DialogsView). */
++      public function set backdropHidden(hidden:Boolean) : void
++      {
++         this.fadeContainer.alpha = hidden ? 0 : 1;
++      }
++
+       /** The popup on top, or null. */
+       public function openView() : DisplayObject
+       {
+diff --git a/TK-Client/src/kabam/rotmg/dialogs/view/DialogsView.as b/TK-Client/src/kabam/rotmg/dialogs/view/DialogsView.as
+index 2277a20..b9365e1 100644
+--- a/TK-Client/src/kabam/rotmg/dialogs/view/DialogsView.as
++++ b/TK-Client/src/kabam/rotmg/dialogs/view/DialogsView.as
+@@ -19,6 +19,12 @@ public class DialogsView extends Sprite {
+         return (this.current != null && this.container.contains(this.current)) || (this.pushed != null && contains(this.pushed));
+     }
+ 
++    /** ROMTG-Doom: no gray backdrop while a dialog shows over Doom (it dimmed the side panel,
++     *  2026-11-15); kept as RotMG has it otherwise. */
++    public function set backdropHidden(hidden:Boolean):void {
++        this.background.alpha = hidden ? 0 : 1;
++    }
++
+     /** The dialog showing, or null. */
+     public function openView():DisplayObject {
+         if (this.pushed != null && contains(this.pushed)) {
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index 6d1891a..1a48581 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -346,6 +346,9 @@ package romtg
+             dlg = DialogsView.instance.openView();
+          }
+          var want:Boolean = viewing && dialogCentre >= 0 && dlg != null && dlg.stage != null;
++         // RotMG grays its whole screen behind a dialog, the side panel too: not over Doom.
++         if (DialogsView.instance != null) DialogsView.instance.backdropHidden = viewing;
++         if (PopupView.instance != null) PopupView.instance.backdropHidden = viewing;
+          if (!want && dialogShifted)
+          {
+             dialogShifted = false;

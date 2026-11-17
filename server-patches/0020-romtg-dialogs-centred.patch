@@ -1,0 +1,149 @@
+diff --git a/TK-Client/src/io/decagames/rotmg/ui/popups/PopupView.as b/TK-Client/src/io/decagames/rotmg/ui/popups/PopupView.as
+index 928e26b..db926dd 100644
+--- a/TK-Client/src/io/decagames/rotmg/ui/popups/PopupView.as
++++ b/TK-Client/src/io/decagames/rotmg/ui/popups/PopupView.as
+@@ -18,6 +18,12 @@ package io.decagames.rotmg.ui.popups
+       // ROMTG-Doom: the one in the game, for romtg.DoomLink to see whether a popup is open.
+       public static var instance:PopupView;
+ 
++      /** The popup on top, or null. */
++      public function openView() : DisplayObject
++      {
++         return this.popupContainer.numChildren > 0 ? this.popupContainer.getChildAt(this.popupContainer.numChildren - 1) : null;
++      }
++
+       public function isOpen() : Boolean
+       {
+          return this.popupContainer.numChildren > 0;
+diff --git a/TK-Client/src/kabam/rotmg/dialogs/view/DialogsView.as b/TK-Client/src/kabam/rotmg/dialogs/view/DialogsView.as
+index 34ddfe1..2277a20 100644
+--- a/TK-Client/src/kabam/rotmg/dialogs/view/DialogsView.as
++++ b/TK-Client/src/kabam/rotmg/dialogs/view/DialogsView.as
+@@ -19,6 +19,14 @@ public class DialogsView extends Sprite {
+         return (this.current != null && this.container.contains(this.current)) || (this.pushed != null && contains(this.pushed));
+     }
+ 
++    /** The dialog showing, or null. */
++    public function openView():DisplayObject {
++        if (this.pushed != null && contains(this.pushed)) {
++            return this.pushed;
++        }
++        return this.current != null && this.container.contains(this.current) ? this.current : null;
++    }
++
+     public function DialogsView() {
+         instance = this;
+         addChild((this.background = new Sprite()));
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index a6761f7..716379c 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -45,8 +45,10 @@ package romtg
+     *   quest ID X Y HP MAX NAME | quest -1   the quest (boss) RotMG points you to, or none
+     *   cash CREDITS FAME     your gold and fame
+     *   tip X Y W H | tip -   a tooltip is showing at X Y W H (RotMG stage units), or none
+-    *   modal 1|0             a dialog or popup (potion storage...) opened in RotMG's play area, or
+-    *                         closed: the swapper shows all of RotMG over Doom meanwhile
++    *   modal 1 X Y W H | modal 0   a dialog or popup (potion storage...) is open at X Y W H
++    *                         (800x600 units), or none: the swapper shows just it (and the side
++    *                         panel) over Doom. From the swapper, `dlgcx U`: where the middle of
++    *                         Doom's view is, in units: open dialogs are moved there (as near as fits).
+     *   view X Y R            RotMG's circle of ground round you: its middle and radius (800x600 units)
+     *   st COLOR TEXT         a status text over you (XP gained, level up, quest complete...)
+     *   chat NC TC NAME<tab>TO<tab>TEXT       a chat line (NC/TC: name and text colours)
+@@ -110,7 +112,9 @@ package romtg
+       // 15: the circle's edge is ragged, whole tiles.
+       private static const VIEW_TILES:Number = 14.5;
+       private static var viewSent:String = "";
+-      private static var modalSent:int = -1;
++      private static var modalSent:String = "";
++      public static var dialogCentre:Number = -1;   // `dlgcx`
++      private static var dialogShifted:Boolean = false;
+       private static var posAt:int = 0;
+       private static var objectsAt:int = 0;
+       private static var projectilesAt:int = 0;
+@@ -225,6 +229,58 @@ package romtg
+          return new Rectangle((g.x - left) / unit, (g.y - top) / unit, g.width / unit, g.height / unit);
+       }
+ 
++      /** `modal ...` for the open dialog or popup (see the header), moved first to the middle
++       *  of Doom's view while Doom shows the game (Ryan, 2026-11-15: just the dialog, centred). */
++      private static function dialogLine() : String
++      {
++         var layer:DisplayObject = null;
++         var dlg:DisplayObject = null;
++         if (PopupView.instance != null && PopupView.instance.openView() != null)
++         {
++            layer = PopupView.instance;
++            dlg = PopupView.instance.openView();
++         }
++         else if (DialogsView.instance != null && DialogsView.instance.openView() != null)
++         {
++            layer = DialogsView.instance;
++            dlg = DialogsView.instance.openView();
++         }
++         var want:Boolean = viewing && dialogCentre >= 0 && dlg != null && dlg.stage != null;
++         if (!want && dialogShifted)
++         {
++            dialogShifted = false;
++            if (DialogsView.instance != null) DialogsView.instance.x = 0;
++            if (PopupView.instance != null) PopupView.instance.x = 0;
++         }
++         if (dlg == null || dlg.stage == null)
++         {
++            return "modal 0";
++         }
++         var r:Rectangle = inRotmgUnits(dlg);
++         if (r == null)
++         {
++            return "modal 0";
++         }
++         if (want && layer.parent != null)
++         {
++            // In units: the dialog's middle to Doom's middle, kept inside the play area (0-600).
++            var dx:Number = dialogCentre - (r.x + r.width / 2);
++            dx = Math.min(dx, 596 - (r.x + r.width));
++            dx = Math.max(dx, 4 - r.x);
++            if (Math.abs(dx) > 1)
++            {
++               var unit:Number = dlg.stage.stageWidth / 800;
++               var g:Rectangle = dlg.getBounds(dlg.stage);
++               var p1:Point = layer.parent.globalToLocal(new Point(g.x, g.y));
++               var p2:Point = layer.parent.globalToLocal(new Point(g.x + dx * unit, g.y));
++               layer.x += p2.x - p1.x;
++               dialogShifted = true;
++               r = inRotmgUnits(dlg);
++            }
++         }
++         return "modal 1 " + int(r.x) + " " + int(r.y) + " " + int(Math.ceil(r.width)) + " " + int(Math.ceil(r.height));
++      }
++
+       /** For Doom's own walking: your speed now (`spd TILES_PER_S`, slows, water and boosts
+        *  in; 0 while paralyzed) and the squares round you (`grid CX CY R CELLS`: from CX-R,
+        *  CY-R row by row, 0 walkable, 1 not, 2 not and blocking the next square's edge too, as
+@@ -381,12 +437,11 @@ package romtg
+             // A dialog or popup opens in the play area, which Doom covers: the swapper shows
+             // RotMG over Doom while one is open (the potion storage showed only in the corner
+             // view, 2026-11-15).
+-            var modal:int = (DialogsView.instance != null && DialogsView.instance.isOpen())
+-               || (PopupView.instance != null && PopupView.instance.isOpen()) ? 1 : 0;
++            var modal:String = dialogLine();
+             if (modal != modalSent)
+             {
+                modalSent = modal;
+-               send("modal " + modal);
++               send(modal);
+             }
+          }
+          if (viewing)
+@@ -665,6 +720,10 @@ package romtg
+                WebMain.STAGE.frameRate = viewing ? Math.max(DOOM_FPS, Parameters.data_.fps) : Parameters.data_.fps;
+             }
+          }
++         else if (parts[0] == "dlgcx" && parts.length >= 2)
++         {
++            dialogCentre = Number(parts[1]);   // the middle of Doom's view, in units (dialogLine)
++         }
+          else if (parts[0] == "hudok")
+          {
+             HudWindow.placed();   // the swapper has put the HUD window over Doom

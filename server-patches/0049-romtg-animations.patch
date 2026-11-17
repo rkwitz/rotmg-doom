@@ -1,0 +1,117 @@
+diff --git a/TK-Client/src/com/company/assembleegameclient/objects/GameObject.as b/TK-Client/src/com/company/assembleegameclient/objects/GameObject.as
+index 1877316..b3d0551 100644
+--- a/TK-Client/src/com/company/assembleegameclient/objects/GameObject.as
++++ b/TK-Client/src/com/company/assembleegameclient/objects/GameObject.as
+@@ -545,6 +545,21 @@ public class GameObject extends BasicObject {
+         this.portrait2_ = null;
+     }
+ 
++    /** ROMTG-Doom: what this character is doing and which way it faces, as draw() picks its
++     *  frames (ATTACK for ATTACK_PERIOD after it shoots, facing the shot unless it doesn't turn
++     *  for attacks; WALK while it moves, facing its way; else STAND): "ACTION FACING", 0 stand,
++     *  1 walk, 2 attack, FACING in world radians. */
++    public function doomAnim():String {
++        var t:int = getTimer();
++        if (t < this.attackStart_ + ATTACK_PERIOD) {
++            return "2 " + (this.props_.dontFaceAttacks_ ? this.facing_ : this.attackAngle_).toFixed(2);
++        }
++        if (this.moveVec_.x > ZERO_LIMIT || this.moveVec_.x < NEGATIVE_ZERO_LIMIT || this.moveVec_.y > ZERO_LIMIT || this.moveVec_.y < NEGATIVE_ZERO_LIMIT) {
++            return "1 " + Math.atan2(this.moveVec_.y, this.moveVec_.x).toFixed(2);
++        }
++        return "0 " + this.facing_.toFixed(2);
++    }
++
+     public function setSize(size:int):void {
+         this.size_ = size;
+         if (this is Player)
+diff --git a/TK-Client/src/com/company/assembleegameclient/objects/Player.as b/TK-Client/src/com/company/assembleegameclient/objects/Player.as
+index 71e0faa..0156f48 100644
+--- a/TK-Client/src/com/company/assembleegameclient/objects/Player.as
++++ b/TK-Client/src/com/company/assembleegameclient/objects/Player.as
+@@ -250,6 +250,7 @@ public class Player extends Character {
+ 
+         // ROMTG-Doom: while Doom has the controls, it picks the way to walk (DoomLink).
+         var doomWalks:Boolean = map_.player_ == this && DoomLink.controlling;
++        var followed:Boolean = false, followVX:Number = 0, followVY:Number = 0;   // (Doom's path, below)
+         if (this.relMoveVec_ != null || doomWalks) {
+             playerAngle = Parameters.data_.cameraAngle;
+             if (this.rotate_ != 0) {
+@@ -266,6 +267,8 @@ public class Player extends Character {
+                 // along the wall, and stuck there (Ryan's video, 2026-11-15).
+                 var budget:Number = dt > 0 ? moveSpeed * dt : 0;
+                 var path:Array = DoomLink.gotoPath;
++                var fromX:Number = x_, fromY:Number = y_;
++                followed = true;
+                 while (budget > 0 && path.length > 0) {
+                     var gox:Number = path[0].x, goy:Number = path[0].y;
+                     if (Math.abs(gox - (Math.floor(gox) + 0.5)) < 0.002) gox = Math.floor(gox) + 0.5;
+@@ -295,6 +298,8 @@ public class Player extends Character {
+                 }
+                 moveVec_.x = 0;
+                 moveVec_.y = 0;
++                followVX = dt > 0 ? (x_ - fromX) / dt : 0;
++                followVY = dt > 0 ? (y_ - fromY) / dt : 0;
+             }
+             else if (doomWalks) {
+                 moveSpeed = this.getMoveSpeed();
+@@ -318,6 +323,13 @@ public class Player extends Character {
+                 moveVec_.y = moveVec_.y - square_.props_.animate_.dy_ / 1000;
+             }
+             this.walkTo(x_ + dt * moveVec_.x, y_ + dt * moveVec_.y);
++            if (followed) {
++                // How fast you actually went along Doom's path: RotMG draws your walk (and
++                // faces you that way) from it. Left at 0, you slid about standing still,
++                // here and on everyone else's screen too (Ryan, 2026-11-15).
++                moveVec_.x = followVX;
++                moveVec_.y = followVY;
++            }
+         }
+         else if (!super.update(time, dt)) {
+             return false;
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index 8dc864d..750f3c0 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -56,6 +56,7 @@ package romtg
+     *   j ID TYPE X Y SIZE MINE aANGLE [RGB MS INTENSITY]   a shot (its flight direction, particle trail)
+     *   efx TYPE TARGET X1 Y1 X2 Y2 RGB SECONDS   an effect the server shows (see effect)
+     *   cond C0 C1            your status effects (RotMG's condition words; Doom draws blind, drunk...)
++    *   an OID ACTION FACING  a character stands (0), walks (1) or attacks (2), facing FACING (radians)
+     *   heal OID 1|0          a character is under Healing (RotMG's green sparkles round it)
+     *   nm OID RGB NAME       another player's name tag and its colour
+     *   tip X Y W H | tip -   a tooltip is showing at X Y W H (RotMG stage units), or none
+@@ -139,6 +140,7 @@ package romtg
+       private static var menuSent:String = "";
+       private static var namesSent:Dictionary = new Dictionary();
+       private static var healingSent:Dictionary = new Dictionary();
++      private static var animSent:Dictionary = new Dictionary();
+       private static var condSent:String = "";
+       private static var meHealing:int = -1;   // object id: "RGB NAME" sent
+       private static var dialogShifted:Boolean = false;
+@@ -162,6 +164,7 @@ package romtg
+          seenShots = new Dictionary();
+          send("map " + clean(m.name_) + " " + m.width_ + " " + m.height_);
+          speedSent = gridSent = pushSent = "";   // a new map: the bridge forgot them; say them again
++         animSent = new Dictionary();
+          namesSent = new Dictionary();   // and the name tags (object ids repeat from map to map:
+          healingSent = new Dictionary(); // a name not sent again never showed, Ryan 2026-11-15)
+       }
+@@ -720,6 +723,18 @@ package romtg
+                   added(go);
+                   continue;
+                }
++               // Characters' animation (walking, attacking, which way they face) for Doom.
++               if (go.animatedChar_ != null)
++               {
++                  var an:String = go.doomAnim();
++                  var sp:int = an.indexOf(" ");
++                  var key:String = an.substr(0, sp) + "/" + Math.round(Number(an.substr(sp + 1)) / 0.35);
++                  if (animSent[go.objectId_] != key)
++                  {
++                     animSent[go.objectId_] = key;
++                     send("an " + go.objectId_ + " " + an);
++                  }
++               }
+                // Healing (a priest's tome...): RotMG sparkles round the character; Doom too.
+                var healing:int = go.isHealing() ? 1 : 0;
+                if (healingSent[go.objectId_] != healing)

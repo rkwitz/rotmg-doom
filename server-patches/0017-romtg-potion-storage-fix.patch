@@ -1,0 +1,16 @@
+diff --git a/TK-Client/src/kabam/rotmg/game/GameConfig.as b/TK-Client/src/kabam/rotmg/game/GameConfig.as
+index 090d4e3..488ba3b 100644
+--- a/TK-Client/src/kabam/rotmg/game/GameConfig.as
++++ b/TK-Client/src/kabam/rotmg/game/GameConfig.as
+@@ -146,7 +146,10 @@ public class GameConfig implements IConfig
+          this.mediatorMap.map(StatNPCInfo).toMediator(StatNPCInfoMediator);
+          this.mediatorMap.map(BountyBoardModal).toMediator(BountyBoardModalMediator);
+          this.mediatorMap.map(PotionStorageModal).toMediator(PotionStorageModalMediator);
+-         this.mediatorMap.map(PotionStorageContainer).toMediator(PotionStorageModalMediator);
++         // ROMTG-Doom: not for its containers too. That mediator wants a PotionStorageModal, so
++         // for a container the injector tried to make one (and a GameSprite for it) and the
++         // potion storage threw "Injector is missing a mapping" (Ryan, 2026-11-15).
++         // this.mediatorMap.map(PotionStorageContainer).toMediator(PotionStorageModalMediator);
+          this.mediatorMap.map(SubscriptionUI).toMediator(SubscriptionUIMediator);
+       }
+ 

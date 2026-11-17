@@ -1,0 +1,87 @@
+diff --git a/TK-Client/src/kabam/rotmg/messaging/impl/GameServerConnection.as b/TK-Client/src/kabam/rotmg/messaging/impl/GameServerConnection.as
+index 354bc66..af7e2e7 100644
+--- a/TK-Client/src/kabam/rotmg/messaging/impl/GameServerConnection.as
++++ b/TK-Client/src/kabam/rotmg/messaging/impl/GameServerConnection.as
+@@ -1494,6 +1494,9 @@ public class GameServerConnection
+          var e:ParticleEffect = null;
+          var start:Point = null;
+          var map:Map = this.gs_.map;
++         // ROMTG-Doom: every effect the server shows (heals, novas, throws...) drawn in Doom too.
++         DoomLink.effect(showEffect.effectType_, showEffect.targetObjectId_, showEffect.pos1_.x_, showEffect.pos1_.y_,
++            showEffect.pos2_.x_, showEffect.pos2_.y_, showEffect.color_, showEffect.duration_);
+ 
+          switch(showEffect.effectType_)
+          {
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index 6913d2d..6b62f8d 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -52,6 +52,8 @@ package romtg
+     *   quest ID X Y HP MAX NAME | quest -1   the quest (boss) RotMG points you to, or none
+     *   cash CREDITS FAME     your gold and fame
+     *   j ID TYPE X Y SIZE MINE [RGB MS INTENSITY]   a shot (with its particle trail)
++    *   efx TYPE TARGET X1 Y1 X2 Y2 RGB SECONDS   an effect the server shows (see effect)
++    *   heal OID 1|0          a character is under Healing (RotMG's green sparkles round it)
+     *   nm OID RGB NAME       another player's name tag and its colour
+     *   tip X Y W H | tip -   a tooltip is showing at X Y W H (RotMG stage units), or none
+     *   menu X Y W H | menu - a menu (teleport, player...) is open at X Y W H (800x600 units), or
+@@ -129,7 +131,9 @@ package romtg
+       private static var modalSent:String = "";
+       public static var dialogCentre:Number = -1;   // `dlgcx`
+       private static var menuSent:String = "";
+-      private static var namesSent:Dictionary = new Dictionary();   // object id: "RGB NAME" sent
++      private static var namesSent:Dictionary = new Dictionary();
++      private static var healingSent:Dictionary = new Dictionary();
++      private static var meHealing:int = -1;   // object id: "RGB NAME" sent
+       private static var dialogShifted:Boolean = false;
+       private static var posAt:int = 0;
+       private static var objectsAt:int = 0;
+@@ -343,6 +347,21 @@ package romtg
+          return cut.width * cut.height / (600 * 600);
+       }
+ 
++      /** An effect the server shows (ShowEffect: heal, teleport, stream, throw, nova, poison,
++       *  line, burst, flow, ring, lightning, collapse, cone blast, jitter, flash, thrown
++       *  projectile), for Doom to draw too: `efx TYPE TARGET X1 Y1 X2 Y2 RGB SECONDS`
++       *  (Ryan, 2026-11-15: the priest's heal didn't show in Doom). */
++      public static function effect(type:int, target:int, x1:Number, y1:Number, x2:Number, y2:Number,
++                                    color:uint, seconds:Number) : void
++      {
++         if (!viewing)
++         {
++            return;
++         }
++         send("efx " + type + " " + target + " " + fix(x1) + " " + fix(y1) + " " + fix(x2) + " " + fix(y2) + " "
++            + uint(color & 0xFFFFFF).toString(16) + " " + Number(seconds).toFixed(2));
++      }
++
+       /** A burst of particles (a shot hitting a wall or an enemy, something dying: RotMG's
+        *  HitEffect and ExplosionEffect) for Doom to draw too, while it shows the game:
+        *  `burst X Y N SIZE VX VY SPREAD RGB,RGB...` (tiles, tiles a second; Ryan, 2026-11-15). */
+@@ -562,6 +581,12 @@ package romtg
+          {
+             sendWalking(player, now);
+          }
++         var myHeal:int = player.isHealing() ? 1 : 0;
++         if (myHeal != meHealing)
++         {
++            meHealing = myHeal;
++            send("heal " + player.objectId_ + " " + myHeal);
++         }
+          if (interactUntil > 0)
+          {
+             if (now > interactUntil || interactNow())
+@@ -644,6 +669,13 @@ package romtg
+                   added(go);
+                   continue;
+                }
++               // Healing (a priest's tome...): RotMG sparkles round the character; Doom too.
++               var healing:int = go.isHealing() ? 1 : 0;
++               if (healingSent[go.objectId_] != healing)
++               {
++                  healingSent[go.objectId_] = healing;
++                  send("heal " + go.objectId_ + " " + healing);
++               }
+                // Other players' name tags, coloured as RotMG colours them (Player's
+                // generateNameBitmapData): party pink, guild green, chosen name yellow, else white.
+                var other:Player = go as Player;

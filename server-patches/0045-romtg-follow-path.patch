@@ -1,0 +1,110 @@
+diff --git a/TK-Client/src/com/company/assembleegameclient/objects/Player.as b/TK-Client/src/com/company/assembleegameclient/objects/Player.as
+index ecc7fa0..dbcbd97 100644
+--- a/TK-Client/src/com/company/assembleegameclient/objects/Player.as
++++ b/TK-Client/src/com/company/assembleegameclient/objects/Player.as
+@@ -261,28 +261,40 @@ public class Player extends Character {
+                 moveSpeed = this.getMoveSpeed();
+                 // A square's middle line exactly (Doom's units round it off by a hair, and only
+                 // on it does isValidPosition let you through a one-square gap).
+-                var gox:Number = DoomLink.gotoX, goy:Number = DoomLink.gotoY;
+-                if (Math.abs(gox - (Math.floor(gox) + 0.5)) < 0.002) gox = Math.floor(gox) + 0.5;
+-                if (Math.abs(goy - (Math.floor(goy) + 0.5)) < 0.002) goy = Math.floor(goy) + 0.5;
+-                var gdx:Number = gox - x_;
+-                var gdy:Number = goy - y_;
+-                var gd:Number = Math.sqrt(gdx * gdx + gdy * gdy);
+-                if (gd > 3 && map_.player_ == this) {
+-                    DoomLink.log("goto ignored: " + gd.toFixed(2) + " tiles away");
+-                }
+-                if (gd < 0.0001 || gd > 3 || dt <= 0) {
+-                    moveVec_.x = 0;   // there, or too far to be a step (a re-centre in flight)
+-                    moveVec_.y = 0;
+-                }
+-                else if (gd <= moveSpeed * dt) {
+-                    this.walkTo(gox, goy);   // there exactly (on a middle line, not a hair off)
+-                    moveVec_.x = 0;
+-                    moveVec_.y = 0;
+-                }
+-                else {
+-                    moveVec_.x = moveSpeed * gdx / gd;
+-                    moveVec_.y = moveSpeed * gdy / gd;
++                // Along Doom's path, point by point (DoomLink.gotoPath), not straight at its
++                // newest place: cutting across, you met a gap's corner where Doom had slid in
++                // along the wall, and stuck there (Ryan's video, 2026-11-15).
++                var budget:Number = dt > 0 ? moveSpeed * dt : 0;
++                var path:Array = DoomLink.gotoPath;
++                while (budget > 0 && path.length > 0) {
++                    var gox:Number = path[0].x, goy:Number = path[0].y;
++                    if (Math.abs(gox - (Math.floor(gox) + 0.5)) < 0.002) gox = Math.floor(gox) + 0.5;
++                    if (Math.abs(goy - (Math.floor(goy) + 0.5)) < 0.002) goy = Math.floor(goy) + 0.5;
++                    var gdx:Number = gox - x_;
++                    var gdy:Number = goy - y_;
++                    var gd:Number = Math.sqrt(gdx * gdx + gdy * gdy);
++                    if (gd > 3) {
++                        if (map_.player_ == this) {
++                            DoomLink.log("goto ignored: " + gd.toFixed(2) + " tiles away");
++                        }
++                        path.shift();   // too far to be a step (a re-centre in flight)
++                        continue;
++                    }
++                    if (gd <= budget) {
++                        this.walkTo(gox, goy);   // there exactly (on a middle line, not a hair off)
++                        if (Math.abs(x_ - gox) > 0.001 || Math.abs(y_ - goy) > 0.001) {
++                            break;   // couldn't get there: Doom is pulled back to you
++                        }
++                        budget -= gd;
++                        path.shift();
++                    }
++                    else {
++                        this.walkTo(x_ + gdx / gd * budget, y_ + gdy / gd * budget);
++                        budget = 0;
++                    }
+                 }
++                moveVec_.x = 0;
++                moveVec_.y = 0;
+             }
+             else if (doomWalks) {
+                 moveSpeed = this.getMoveSpeed();
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index d6edae2..9d96c9e 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -112,6 +112,8 @@ package romtg
+       public static var gotoX:Number = 0;
+       public static var gotoY:Number = 0;
+       public static var hasGoto:Boolean = false;
++      // Doom's path for you since you last caught up: its places in order (Player follows them).
++      public static var gotoPath:Array = [];
+       private static var speedSent:String = "";
+       private static var gridSent:String = "";
+       private static var gridAt:int = 0;
+@@ -1011,6 +1013,7 @@ package romtg
+             }
+             moveX = moveY = 0;
+             hasGoto = false;
++            gotoPath.length = 0;
+             firing = false;
+          }
+          else if (parts[0] == "goto" && parts.length >= 3)
+@@ -1018,6 +1021,14 @@ package romtg
+             gotoX = Number(parts[1]);
+             gotoY = Number(parts[2]);
+             hasGoto = controlling && !isNaN(gotoX) && !isNaN(gotoY);
++            if (hasGoto)
++            {
++               gotoPath.push(new Point(gotoX, gotoY));
++               while (gotoPath.length > 40)
++               {
++                  gotoPath.shift();
++               }
++            }
+          }
+          else if (parts[0] == "m" && parts.length >= 3)
+          {
+@@ -1179,6 +1190,7 @@ package romtg
+          firing = false;
+          moveX = moveY = 0;
+          hasGoto = false;
++         gotoPath.length = 0;
+          if (socket == null)
+          {
+             return;

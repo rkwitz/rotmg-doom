@@ -1,0 +1,38 @@
+diff --git a/TK-Client/src/kabam/rotmg/minimap/view/MiniMap.as b/TK-Client/src/kabam/rotmg/minimap/view/MiniMap.as
+index ac9b990..2dccab1 100644
+--- a/TK-Client/src/kabam/rotmg/minimap/view/MiniMap.as
++++ b/TK-Client/src/kabam/rotmg/minimap/view/MiniMap.as
+@@ -1,5 +1,6 @@
+ package kabam.rotmg.minimap.view
+ {
++   import romtg.DoomLink;
+    import com.company.assembleegameclient.map.GroundLibrary;
+    import com.company.assembleegameclient.map.Map;
+    import com.company.assembleegameclient.objects.Character;
+@@ -398,7 +399,9 @@ package kabam.rotmg.minimap.view
+          this.arrowMatrix_.identity();
+          this.arrowMatrix_.translate(-4,-5);
+          this.arrowMatrix_.scale(8 / this.blueArrow_.width,32 / this.blueArrow_.height);
+-         this.arrowMatrix_.rotate(Parameters.data_.cameraAngle);
++         // ROMTG-Doom: in Doom, the arrow points the way you face there (Ryan, 2026-11-16: on Tab
++         // it showed RotMG's camera); north-up map, the arrow drawn pointing up.
++         this.arrowMatrix_.rotate(DoomLink.viewing ? DoomLink.aim + Math.PI / 2 : Parameters.data_.cameraAngle);
+          this.arrowMatrix_.translate(ppx,ppy);
+          g.beginBitmapFill(this.blueArrow_,this.arrowMatrix_,false);
+          g.drawRect(ppx - 16,ppy - 16,32,32);
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index 156b2d1..8bb4ae1 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -1123,6 +1123,11 @@ package romtg
+             viewing = parts[1] == "1";
+             if (was && !viewing)
+             {
++               // Back to RotMG: its camera turned so up on the screen is the way you faced in
++               // Doom (Ryan, 2026-11-16), as the minimap's arrow showed.
++               var turned:Number = aim + Math.PI / 2;
++               turned = Math.atan2(Math.sin(turned), Math.cos(turned));
++               Parameters.data_.cameraAngle = turned;
+                hideOwnHud(false);
+                HudWindow.hide();
+             }

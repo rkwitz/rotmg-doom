@@ -1,0 +1,82 @@
+diff --git a/TK-Client/src/com/company/assembleegameclient/ui/menu/Menu.as b/TK-Client/src/com/company/assembleegameclient/ui/menu/Menu.as
+index 2e7706a..3737b75 100644
+--- a/TK-Client/src/com/company/assembleegameclient/ui/menu/Menu.as
++++ b/TK-Client/src/com/company/assembleegameclient/ui/menu/Menu.as
+@@ -35,6 +35,10 @@ package com.company.assembleegameclient.ui.menu
+       
+       private const graphicsData_:Vector.<IGraphicsData> = new <IGraphicsData>[lineStyle_,backgroundFill_,path_,GraphicsUtil.END_FILL,GraphicsUtil.END_STROKE];
+       
++      // ROMTG-Doom: the menu showing (teleport, player...), for romtg.DoomLink to have the
++      // swapper show it over Doom while you use the side panel (2026-11-15).
++      public static var current:Menu = null;
++
+       public function Menu(background:uint, outline:uint)
+       {
+          super();
+@@ -56,6 +60,7 @@ package com.company.assembleegameclient.ui.menu
+       
+       protected function onAddedToStage(event:Event) : void
+       {
++         current = this;
+          this.draw();
+          this.position();
+          addEventListener(Event.ENTER_FRAME,this.onEnterFrame);
+@@ -64,6 +69,10 @@ package com.company.assembleegameclient.ui.menu
+       
+       protected function onRemovedFromStage(event:Event) : void
+       {
++         if (current == this)
++         {
++            current = null;
++         }
+          removeEventListener(Event.ENTER_FRAME,this.onEnterFrame);
+          removeEventListener(MouseEvent.ROLL_OUT,this.onRollOut);
+       }
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index e902b3c..3935a89 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -11,6 +11,7 @@ package romtg
+    import flash.display.DisplayObject;
+    import flash.events.Event;
+    import flash.geom.Point;
++   import com.company.assembleegameclient.ui.menu.Menu;
+    import io.decagames.rotmg.ui.popups.PopupView;
+    import kabam.rotmg.dialogs.view.DialogsView;
+    import flash.geom.Rectangle;
+@@ -45,6 +46,8 @@ package romtg
+     *   quest ID X Y HP MAX NAME | quest -1   the quest (boss) RotMG points you to, or none
+     *   cash CREDITS FAME     your gold and fame
+     *   tip X Y W H | tip -   a tooltip is showing at X Y W H (RotMG stage units), or none
++    *   menu X Y W H | menu - a menu (teleport, player...) is open at X Y W H (800x600 units), or
++    *                         none: the swapper shows it over Doom with the side panel
+     *   ingame 1|0            you are in a game, or out in RotMG's menus (the swapper shows RotMG)
+     *   modal 1 X Y W H | modal 0   a dialog or popup (potion storage...) is open at X Y W H
+     *                         (800x600 units), or none: the swapper shows just it (and the side
+@@ -115,6 +118,7 @@ package romtg
+       private static var viewSent:String = "";
+       private static var modalSent:String = "";
+       public static var dialogCentre:Number = -1;   // `dlgcx`
++      private static var menuSent:String = "";
+       private static var dialogShifted:Boolean = false;
+       private static var posAt:int = 0;
+       private static var objectsAt:int = 0;
+@@ -445,6 +449,18 @@ package romtg
+             // A dialog or popup opens in the play area, which Doom covers: the swapper shows
+             // RotMG over Doom while one is open (the potion storage showed only in the corner
+             // view, 2026-11-15).
++            var menuLine:String = "menu -";
++            var mr:Rectangle = Menu.current != null && Menu.current.stage != null ? inRotmgUnits(Menu.current) : null;
++            if (mr != null)
++            {
++               menuLine = "menu " + int(mr.x) + " " + int(mr.y) + " " + int(Math.ceil(mr.width)) + " " + int(Math.ceil(mr.height));
++            }
++            if (menuLine != menuSent)
++            {
++               menuSent = menuLine;
++               send(menuLine);
++               flush();
++            }
+             var modal:String = dialogLine();
+             if (modal != modalSent)
+             {

@@ -1,0 +1,24 @@
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index 908dd9e..0bca9d6 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -52,7 +52,7 @@ package romtg
+     *   me ID                 your own object's id (never drawn: you are Doom's camera)
+     *   quest ID X Y HP MAX NAME | quest -1   the quest (boss) RotMG points you to, or none
+     *   cash CREDITS FAME     your gold and fame
+-    *   j ID TYPE X Y SIZE MINE [RGB MS INTENSITY]   a shot (with its particle trail)
++    *   j ID TYPE X Y SIZE MINE aANGLE [RGB MS INTENSITY]   a shot (its flight direction, particle trail)
+     *   efx TYPE TARGET X1 Y1 X2 Y2 RGB SECONDS   an effect the server shows (see effect)
+     *   heal OID 1|0          a character is under Healing (RotMG's green sparkles round it)
+     *   nm OID RGB NAME       another player's name tag and its colour
+@@ -194,7 +194,9 @@ package romtg
+                   + (shot.projProps_.particleTrailLifetimeMS != -1 ? shot.projProps_.particleTrailLifetimeMS : 600) + " "
+                   + shot.projProps_.particleTrailIntensity_;
+             }
+-            send("j " + shot.objectId_ + " " + shot.props_.type_ + " " + fix(shot.x_) + " " + fix(shot.y_) + " " + int(size) + " " + mine + trail);
++            // Its flight direction too (RotMG radians), so Doom points the picture that way.
++            send("j " + shot.objectId_ + " " + shot.props_.type_ + " " + fix(shot.x_) + " " + fix(shot.y_) + " " + int(size) + " " + mine
++               + " a" + shot.angle_.toFixed(3) + trail);
+             seenShots[shot.objectId_] = fix(shot.x_) + " " + fix(shot.y_);
+             return;
+          }

@@ -1,0 +1,53 @@
+diff --git a/TK-Client/src/kabam/rotmg/messaging/impl/GameServerConnection.as b/TK-Client/src/kabam/rotmg/messaging/impl/GameServerConnection.as
+index 263354d..354bc66 100644
+--- a/TK-Client/src/kabam/rotmg/messaging/impl/GameServerConnection.as
++++ b/TK-Client/src/kabam/rotmg/messaging/impl/GameServerConnection.as
+@@ -180,6 +180,7 @@ import kabam.rotmg.messaging.impl.outgoing.UpgradeStat;
+ import kabam.rotmg.messaging.impl.outgoing.UseItem;
+ import kabam.rotmg.messaging.impl.outgoing.UsePortal;
+ 
++import romtg.DoomLink;
+ import romtg.pets.ActivePetUpdateRequestMessage;
+ import romtg.pets.EvolvePetMessage;
+ import romtg.pets.HatchPetMessage;
+@@ -1667,6 +1668,7 @@ public class GameServerConnection
+                   continue;
+                case StatData.SIZE_STAT:
+                   go.size_ = value;
++                  DoomLink.sized(go);   // ROMTG-Doom: Doom draws it at its real size
+                   continue;
+                case StatData.MAX_MP_STAT:
+                   player.maxMP_ = value;
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index 723f558..6913d2d 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -158,6 +158,20 @@ package romtg
+          send("t " + x + " " + y + " " + type);
+       }
+ 
++      /** An object's size came (or changed): the server sends it with the object's stats, which
++       *  the client reads only after adding the object, so `o` first went out at the default 100
++       *  and every enemy was drawn at 100 (a Scorpion Queen, 150, the size of a scorpion; Ryan,
++       *  2026-11-15). Sent again with its real size. */
++      public static function sized(go:GameObject) : void
++      {
++         if (go != null && go.map_ != null && sentSize[go.objectId_] !== undefined && sentSize[go.objectId_] != go.size_)
++         {
++            added(go);
++         }
++      }
++
++      private static var sentSize:Dictionary = new Dictionary();
++
+       public static function added(bo:BasicObject) : void
+       {
+          var shot:Projectile = bo as Projectile;
+@@ -183,6 +197,7 @@ package romtg
+          {
+             return;
+          }
++         sentSize[go.objectId_] = go.size_;
+          send("o " + go.objectId_ + " " + looks(go) + " " + fix(go.x_) + " " + fix(go.y_) + " " + go.size_
+               + " " + (go.props_.static_ ? 1 : 0) + health(go));
+          petSkins[go.objectId_] = looks(go);

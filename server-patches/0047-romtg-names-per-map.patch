@@ -1,0 +1,22 @@
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index 9d96c9e..b78fc22 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -161,6 +161,8 @@ package romtg
+          seenShots = new Dictionary();
+          send("map " + clean(m.name_) + " " + m.width_ + " " + m.height_);
+          speedSent = gridSent = "";   // a new map: the bridge forgot them; say them again
++         namesSent = new Dictionary();   // and the name tags (object ids repeat from map to map:
++         healingSent = new Dictionary(); // a name not sent again never showed, Ryan 2026-11-15)
+       }
+ 
+       public static function tile(x:int, y:int, type:uint) : void
+@@ -960,6 +962,8 @@ package romtg
+          }
+          send("map " + clean(map.name_) + " " + map.width_ + " " + map.height_);
+          speedSent = gridSent = "";
++         namesSent = new Dictionary();
++         healingSent = new Dictionary();
+          var square:Square;
+          for each (square in map.squares_)
+          {

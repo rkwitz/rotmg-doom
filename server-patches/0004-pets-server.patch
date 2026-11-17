@@ -1,0 +1,1709 @@
+diff --git a/TK-Server/TKR.Shared/database/account/DbAccount.cs b/TK-Server/TKR.Shared/database/account/DbAccount.cs
+index 4b657eb..4a134fa 100644
+--- a/TK-Server/TKR.Shared/database/account/DbAccount.cs
++++ b/TK-Server/TKR.Shared/database/account/DbAccount.cs
+@@ -44,6 +44,10 @@ namespace TKR.Shared.database.account
+         public int GuildRank { get => GetValue<int>("guildRank"); set => SetValue("guildRank", value); }
+         public bool Hidden { get => GetValue<bool>("hidden"); set => SetValue("hidden", value); }
+         public int[] IgnoreList { get => GetValue<int[]>("ignoreList") ?? new int[0]; set => SetValue("ignoreList", value); }
++        // ROMTG-Doom pets (from NR-CORE): the account's pets, and its pet yard's size (1..5).
++        public int[] PetList { get => GetValue<int[]>("petList") ?? new int[0]; set => SetValue("petList", value); }
++        public int PetYardType { get => System.Math.Max(1, GetValue<int>("petYardType")); set => SetValue("petYardType", value); }
++        public bool StarterPetEgg { get => GetValue<bool>("starterPetEgg"); set => SetValue("starterPetEgg", value); }
+         public string IP { get => GetValue<string>("ip"); set => SetValue("ip", value); }
+         public DateTime LastRecoveryTime { get => GetValue<DateTime>("lastRecoveryTime"); set => SetValue("lastRecoveryTime", value); }
+         public int LastSeen { get => GetValue<int>("lastSeen"); set => SetValue("lastSeen", value); }
+diff --git a/TK-Server/TKR.Shared/database/pet/DbPet.cs b/TK-Server/TKR.Shared/database/pet/DbPet.cs
+new file mode 100644
+index 0000000..66d470a
+--- /dev/null
++++ b/TK-Server/TKR.Shared/database/pet/DbPet.cs
+@@ -0,0 +1,86 @@
++using StackExchange.Redis;
++using TKR.Shared.database.account;
++using TKR.Shared.resources;
++
++// ROMTG-Doom: an account's pets, ported from NR-CORE (common/DbModels.cs DbPet, AGPL-3.0).
++// Stored as hashes "pet.{accountId}.{petId}"; the account keeps the list of its pet ids.
++namespace TKR.Shared.database.pet
++{
++    public class DbPetAbility
++    {
++        private readonly DbPet _owner;
++        private readonly string _typeKey;
++        private readonly string _levelKey;
++        private readonly string _powerKey;
++
++        public DbPetAbility(DbPet owner, int abilityId)
++        {
++            _owner = owner;
++            _typeKey = $"A{abilityId}Type";
++            _levelKey = $"A{abilityId}Level";
++            _powerKey = $"A{abilityId}Power";
++        }
++
++        public PAbility Type { get => (PAbility)_owner.Get(_typeKey); set => _owner.Set(_typeKey, (int)value); }
++        public int Level { get => _owner.Get(_levelKey); set => _owner.Set(_levelKey, value); }
++        public int Power { get => _owner.Get(_powerKey); set => _owner.Set(_powerKey, value); }
++    }
++
++    public class DbPet : RedisObject
++    {
++        public const int NumAbilities = 3;
++
++        public DbAccount Account { get; private set; }
++        public int PetId { get; set; }
++        public DbPetAbility[] Ability { get; private set; }
++
++        public DbPet(DbAccount acc, int petId)
++        {
++            Account = acc;
++            PetId = petId;
++
++            Init(acc.Database, $"pet.{acc.AccountId}.{petId}");
++
++            Ability = new DbPetAbility[NumAbilities];
++            for (var i = 0; i < NumAbilities; i++)
++                Ability[i] = new DbPetAbility(this, i);
++        }
++
++        public ushort ObjectType { get => GetValue<ushort>("objType"); set => SetValue("objType", value); }
++        public PRarity Rarity { get => (PRarity)GetValue<ushort>("rarity"); set => SetValue("rarity", (ushort)value); }
++        public int MaxLevel { get => GetValue<int>("maxLevel"); set => SetValue("maxLevel", value); }
++        /// <summary>The look chosen with a pet stone (0: the pet's own).</summary>
++        public int SkinType { get => GetValue<int>("skinType"); set => SetValue("skinType", value); }
++
++        internal int Get(string key) => GetValue<int>(key);
++        internal void Set(string key, int value) => SetValue(key, value);
++    }
++
++    public static class PetDatabase
++    {
++        public const int MaxPetCount = 64;
++
++        public static DbPet NewPet(this Database db, DbAccount acc)
++        {
++            var petList = new System.Collections.Generic.List<int>(acc.PetList);
++            if (petList.Count >= MaxPetCount)
++                return null;
++            var nextPetId = (int)db.Conn.StringIncrement("nextPetId");
++            petList.Add(nextPetId);
++            acc.PetList = petList.ToArray();
++            acc.FlushAsync();
++            return new DbPet(acc, nextPetId);
++        }
++
++        public static bool RemovePet(this Database db, DbAccount acc, int petId)
++        {
++            var petList = new System.Collections.Generic.List<int>(acc.PetList);
++            if (!petList.Remove(petId))
++                return false;
++            acc.PetList = petList.ToArray();
++            acc.FlushAsync();
++            db.Conn.KeyDeleteAsync($"pet.{acc.AccountId}.{petId}", CommandFlags.FireAndForget);
++            return true;
++        }
++    }
++}
+diff --git a/TK-Server/TKR.Shared/resources/ActivateEffect.cs b/TK-Server/TKR.Shared/resources/ActivateEffect.cs
+index 233e5de..04eb90c 100644
+--- a/TK-Server/TKR.Shared/resources/ActivateEffect.cs
++++ b/TK-Server/TKR.Shared/resources/ActivateEffect.cs
+@@ -23,6 +23,8 @@ namespace TKR.Shared.resources
+         public readonly float Range;
+         public readonly bool RemoveSelf;
+         public readonly ushort SkinType;
++        /// <summary>ROMTG-Doom pets: a pet stone's pet skin type (decimal skinId).</summary>
++        public readonly int PetSkinId;
+         public readonly int Stats;
+         public readonly int ThrowTime;
+         public readonly int TotalDamage;
+@@ -74,6 +76,8 @@ namespace TKR.Shared.resources
+ 
+             if (e.Attribute("skinType") != null)
+                 SkinType = ushort.Parse(e.Attribute("skinType").Value.Substring(2), System.Globalization.NumberStyles.AllowHexSpecifier);
++            if (e.Attribute("skinId") != null)
++                PetSkinId = int.Parse(e.Attribute("skinId").Value);
+ 
+             if (e.Attribute("useWisMod") != null)
+                 UseWisMod = e.Attribute("useWisMod").Value.Equals("true");
+diff --git a/TK-Server/TKR.Shared/resources/ActivateEffects.cs b/TK-Server/TKR.Shared/resources/ActivateEffects.cs
+index 1071240..2bee7e6 100644
+--- a/TK-Server/TKR.Shared/resources/ActivateEffects.cs
++++ b/TK-Server/TKR.Shared/resources/ActivateEffects.cs
+@@ -55,6 +55,9 @@
+         ShurikenAbilityBerserk,
+         GenericActivate,
+         FuelEngine,
+-        Bolas
++        Bolas,
++        // ROMTG-Doom pets (from NR-CORE): hatch an egg, and a pet stone's new look.
++        CreatePet,
++        PetSkin
+     }
+ }
+diff --git a/TK-Server/TKR.Shared/resources/Item.cs b/TK-Server/TKR.Shared/resources/Item.cs
+index cb55aa0..f9543f2 100644
+--- a/TK-Server/TKR.Shared/resources/Item.cs
++++ b/TK-Server/TKR.Shared/resources/Item.cs
+@@ -64,11 +64,27 @@ namespace TKR.Shared.resources
+         public bool XpBoost;
+         public TalismanItemDesc TalismanItemDesc;
+ 
++        // ROMTG-Doom pets (from NR-CORE): what an item is worth as pet food, and an egg's family
++        // and rarity.
++        public int FeedPower;
++        public PFamily Family;
++        public PRarity Rarity;
++
+         public readonly List<XElement> Activates;
+         public readonly List<XElement> ActivateOnEquips;
+ 
+         public readonly bool DonorItem;
+ 
++        /// <summary>ROMTG-Doom pets: TK's items have no feed power; this follows RotMG's roughly
++        /// (higher tiers and rarer bags feed more).</summary>
++        private static int DefaultFeedPower(int tier, int bagType)
++        {
++            var power = 5 + System.Math.Max(0, tier) * 10;
++            if (tier < 0)
++                power = 50 + 100 * System.Math.Max(0, bagType);
++            return power;
++        }
++
+         public Item(ushort type, XElement e)
+         {
+             ObjectType = type;
+@@ -130,6 +146,10 @@ namespace TKR.Shared.resources
+ 
+             ActivateEffects = activate.ToArray();
+ 
++            FeedPower = e.Element("feedPower") != null ? int.Parse(e.Element("feedPower").Value) : DefaultFeedPower(Tier, BagType);
++            Family = PetDesc.GetFamily(e.Element("PetFamily"));
++            Rarity = PetDesc.GetRarity(e.Element("Rarity"));
++
+             var projs = new List<ProjectileDesc>();
+ 
+             foreach (var i in e.Elements("Projectile"))
+diff --git a/TK-Server/TKR.Shared/resources/PetDescs.cs b/TK-Server/TKR.Shared/resources/PetDescs.cs
+new file mode 100644
+index 0000000..be4e5ba
+--- /dev/null
++++ b/TK-Server/TKR.Shared/resources/PetDescs.cs
+@@ -0,0 +1,133 @@
++using System;
++using System.Xml.Linq;
++
++// ROMTG-Doom: RotMG's pet system, ported from NR-CORE (common/resources/XmlDescriptors.Pets.cs,
++// AGPL-3.0). The pet data itself comes from the NR client, moved to free types by
++// rotmg-doom/scripts/pets.py, which also fixes the ability types below.
++namespace TKR.Shared.resources
++{
++    public enum PFamily : ushort
++    {
++        Undefined,
++        Aquatic,
++        Automaton,
++        Avian,
++        Canine,
++        Exotic,
++        Farm,
++        Feline,
++        Humanoid,
++        Insect,
++        Penguin,
++        Reptile,
++        Spooky,
++        Unknown, // the "? ? ? ?" family
++        Woodland
++    }
++
++    public enum PRarity : ushort
++    {
++        Common,
++        Uncommon,
++        Rare,
++        Legendary,
++        Divine,
++        Undefined
++    }
++
++    /// <summary>The pet abilities: their values are the PetAbility objects' types (scripts/pets.py
++    /// ABILITY_TYPES).</summary>
++    public enum PAbility : ushort
++    {
++        Undefined = 0,
++        AttackClose = 0x1DF0,
++        AttackMid = 0x1DF1,
++        AttackFar = 0x1DF2,
++        Electric = 0x1DF3,
++        Heal = 0x1DF4,
++        MagicHeal = 0x1DF5,
++        Savage = 0x1DF6,
++        Decoy = 0x1DF7,
++        RisingFury = 0x1DF8
++    }
++
++    public class PetDesc : ObjectDesc
++    {
++        public PetDesc(ushort objType, XElement elem) : base(objType, elem)
++        {
++            Family = GetFamily(elem.Element("Family"));
++            Rarity = GetRarity(elem.Element("Rarity"));
++            FirstAbility = GetAbility(elem.Element("FirstAbility"));
++            DefaultSkin = elem.Element("DefaultSkin")?.Value;
++        }
++
++        public PFamily Family { get; private set; }
++        public PRarity Rarity { get; private set; }
++        public PAbility FirstAbility { get; private set; }
++        public string DefaultSkin { get; private set; }
++
++        public static PRarity GetRarity(XElement rarity)
++        {
++            if (rarity == null || !Enum.TryParse(rarity.Value, out PRarity value))
++                return PRarity.Undefined;
++            return value;
++        }
++
++        public static PFamily GetFamily(XElement family)
++        {
++            if (family == null)
++                return PFamily.Undefined;
++            if (family.Value.Equals("? ? ? ?"))
++                return PFamily.Unknown;
++            return Enum.TryParse(family.Value, out PFamily value) ? value : PFamily.Undefined;
++        }
++
++        public static PAbility GetAbility(XElement ability)
++        {
++            if (ability == null)
++                return PAbility.Undefined;
++
++            switch (ability.Value)
++            {
++                case "Attack Close": return PAbility.AttackClose;
++                case "Attack Mid": return PAbility.AttackMid;
++                case "Attack Far": return PAbility.AttackFar;
++                case "Electric": return PAbility.Electric;
++                case "Heal": return PAbility.Heal;
++                case "Magic Heal": return PAbility.MagicHeal;
++                case "Savage": return PAbility.Savage;
++                case "Decoy":
++                case "Decoy (RotMG Pet)": return PAbility.Decoy;
++                case "Rising Fury": return PAbility.RisingFury;
++                default: return PAbility.Undefined;
++            }
++        }
++    }
++
++    public class PetSkinDesc : ObjectDesc
++    {
++        public PetSkinDesc(ushort objType, XElement elem) : base(objType, elem) { }
++    }
++
++    public class PetBehaviorDesc : ObjectDesc
++    {
++        public PetBehaviorDesc(ushort objType, XElement elem) : base(objType, elem)
++        {
++            BaseBehavior = elem.Element("BaseBehavior")?.Attribute("id")?.Value;
++            Parameters = elem.Element("Parameters");
++        }
++
++        public string BaseBehavior { get; private set; }
++        public XElement Parameters { get; private set; }
++    }
++
++    public class PetAbilityDesc : ObjectDesc
++    {
++        public PetAbilityDesc(ushort objType, XElement elem) : base(objType, elem)
++        {
++            Group = elem.Element("Group")?.Value;
++        }
++
++        public string Group { get; private set; }
++    }
++}
+diff --git a/TK-Server/TKR.Shared/resources/XmlData.cs b/TK-Server/TKR.Shared/resources/XmlData.cs
+index 23d6384..3d50cde 100644
+--- a/TK-Server/TKR.Shared/resources/XmlData.cs
++++ b/TK-Server/TKR.Shared/resources/XmlData.cs
+@@ -26,6 +26,12 @@ namespace TKR.Shared.resources
+         public Dictionary<ushort, SkinDesc> Skins = new Dictionary<ushort, SkinDesc>();
+         public Dictionary<int, ItemType> SlotTypeToItemType = new Dictionary<int, ItemType>();
+         public Dictionary<ushort, TileDesc> Tiles = new Dictionary<ushort, TileDesc>();
++
++        // ROMTG-Doom pets (from NR-CORE).
++        public Dictionary<ushort, PetDesc> Pets = new Dictionary<ushort, PetDesc>();
++        public Dictionary<ushort, PetSkinDesc> PetSkins = new Dictionary<ushort, PetSkinDesc>();
++        public Dictionary<ushort, PetBehaviorDesc> PetBehaviors = new Dictionary<ushort, PetBehaviorDesc>();
++        public Dictionary<ushort, PetAbilityDesc> PetAbilities = new Dictionary<ushort, PetAbilityDesc>();
+         public Dictionary<ushort, string> TileTypeToId = new Dictionary<ushort, string>();
+ 
+         private readonly Dictionary<string, WorldResource> Worlds = new Dictionary<string, WorldResource>();
+@@ -139,6 +145,22 @@ namespace TKR.Shared.resources
+                         Skins[type] = new SkinDesc(type, e);
+                         break;
+ 
++                    // ROMTG-Doom pets (from NR-CORE).
++                    case "Pet":
++                        Pets[type] = new PetDesc(type, e);
++                        ObjectDescs[type] = Pets[type];
++                        break;
++                    case "PetSkin":
++                        PetSkins[type] = new PetSkinDesc(type, e);
++                        ObjectDescs[type] = PetSkins[type];
++                        break;
++                    case "PetBehavior":
++                        PetBehaviors[type] = new PetBehaviorDesc(type, e);
++                        break;
++                    case "PetAbility":
++                        PetAbilities[type] = new PetAbilityDesc(type, e);
++                        break;
++
+                     default:
+                         ObjectDescs[type] = new ObjectDesc(type, e);
+                         break;
+diff --git a/TK-Server/TKR.WorldServer/core/ConnectionManager.cs b/TK-Server/TKR.WorldServer/core/ConnectionManager.cs
+index ff6d084..4b4f9c3 100644
+--- a/TK-Server/TKR.WorldServer/core/ConnectionManager.cs
++++ b/TK-Server/TKR.WorldServer/core/ConnectionManager.cs
+@@ -168,6 +168,8 @@ namespace TKR.WorldServer.core
+ 
+             if (world.InstanceType == WorldResourceInstanceType.Vault)
+                 (world as VaultWorld).SetClient(client);
++            else if (world is PetYard petYard)
++                petYard.SetClient(client);   // ROMTG-Doom pets
+ 
+             if (world is TestWorld)
+             {
+diff --git a/TK-Server/TKR.WorldServer/core/net/handlers/UsePortalHandler.cs b/TK-Server/TKR.WorldServer/core/net/handlers/UsePortalHandler.cs
+index ae79b07..a8f4f79 100644
+--- a/TK-Server/TKR.WorldServer/core/net/handlers/UsePortalHandler.cs
++++ b/TK-Server/TKR.WorldServer/core/net/handlers/UsePortalHandler.cs
+@@ -72,6 +72,13 @@ namespace TKR.WorldServer.core.net.handlers
+             }
+ 
+             world = portal.WorldInstance;
++            // ROMTG-Doom: TK's own "Portal to Nexus" is spelled with a small "to", so the case
++            // below ("Portal To Nexus") never matched it.
++            if (world == null && string.Equals(portal.ObjectDesc.IdName, PORTAL_TO_NEXUS, System.StringComparison.OrdinalIgnoreCase))
++            {
++                player.Reconnect(player.GameServer.WorldManager.Nexus);
++                return;
++            }
+             if (world == null)
+             {
+                 switch (portal.ObjectDesc.IdName)
+@@ -117,6 +124,13 @@ namespace TKR.WorldServer.core.net.handlers
+             }
+ 
+             dungeonName = portal.PortalDescr.DungeonName;
++            if (string.IsNullOrEmpty(dungeonName))
++            {
++                // ROMTG-Doom: a portal with nowhere to go (e.g. TK's realm "Nexus Portal" outside
++                // the nexus) used to throw here and hang the client.
++                player.SendError("This portal leads nowhere.");
++                return;
++            }
+ 
+             world = portal.GameServer.WorldManager.CreateNewWorld(dungeonName, null, player.World);
+             if (world == null)
+@@ -142,6 +156,8 @@ namespace TKR.WorldServer.core.net.handlers
+ 
+             if (world.InstanceType == WorldResourceInstanceType.Vault)
+                 (world as VaultWorld).SetOwner(player.AccountId);
++            else if (world is PetYard petYard)
++                petYard.SetOwner(player.AccountId);   // ROMTG-Doom pets
+             else if (!world.CreateInstance)
+                 portal.WorldInstance = world;
+             player.Reconnect(world);
+diff --git a/TK-Server/TKR.WorldServer/core/net/handlers/pets/PetHandlers.cs b/TK-Server/TKR.WorldServer/core/net/handlers/pets/PetHandlers.cs
+new file mode 100644
+index 0000000..283cbb9
+--- /dev/null
++++ b/TK-Server/TKR.WorldServer/core/net/handlers/pets/PetHandlers.cs
+@@ -0,0 +1,225 @@
++using System.Collections.Generic;
++using System.Linq;
++using TKR.Shared;
++using TKR.Shared.database.pet;
++using TKR.Shared.resources;
++using TKR.WorldServer.core.net.datas;
++using TKR.WorldServer.core.objects;
++using TKR.WorldServer.core.worlds;
++using TKR.WorldServer.core.worlds.impl;
++using TKR.WorldServer.networking;
++using TKR.WorldServer.networking.packets.outgoing.pets;
++
++// ROMTG-Doom: the client's pet requests, ported from NR-CORE (wServer/networking/handlers
++// PetUpgradeRequestHandler and ActivePetUpdateRequestHandler, AGPL-3.0). Both only work in your
++// own pet yard, where your pets are.
++namespace TKR.WorldServer.core.net.handlers.pets
++{
++    /// <summary>Feed a pet an item, fuse two pets, or grow the yard; paid in gold or fame.</summary>
++    public class PetUpgradeRequestHandler : IMessageHandler
++    {
++        public const int UPGRADE_PET_YARD = 1;
++        public const int FEED_PET = 2;
++        public const int FUSE_PET = 3;
++
++        public override MessageId MessageId => MessageId.PET_UPGRADE_REQUEST;
++
++        // [gold, fame]
++        private static readonly Dictionary<int, int[]> PetYardCost = new Dictionary<int, int[]>
++        {
++            { 1, new[] { 150, 500 } }, { 2, new[] { 400, 2000 } }, { 3, new[] { 1200, 25000 } }, { 4, new[] { 2000, 50000 } }
++        };
++        private static readonly Dictionary<PRarity, int[]> FeedCost = new Dictionary<PRarity, int[]>
++        {
++            { PRarity.Common, new[] { 5, 10 } }, { PRarity.Uncommon, new[] { 12, 30 } }, { PRarity.Rare, new[] { 30, 100 } },
++            { PRarity.Legendary, new[] { 60, 350 } }, { PRarity.Divine, new[] { 150, 1000 } }
++        };
++        private static readonly Dictionary<PRarity, int[]> FuseCost = new Dictionary<PRarity, int[]>
++        {
++            { PRarity.Common, new[] { 100, 300 } }, { PRarity.Uncommon, new[] { 240, 1000 } },
++            { PRarity.Rare, new[] { 600, 4000 } }, { PRarity.Legendary, new[] { 1800, 15000 } }
++        };
++
++        public override void Handle(Client client, NetworkReader rdr, ref TickTime time)
++        {
++            var transType = rdr.ReadByte();
++            var petId1 = rdr.ReadInt32();
++            var petId2 = rdr.ReadInt32();
++            var objectId = rdr.ReadInt32();
++            var slot = ObjectSlot.Read(rdr);
++            var currency = (CurrencyType)rdr.ReadByte();
++
++            if (client.Player == null || client.Player.World == null)
++                return;
++            if (currency != CurrencyType.Fame && currency != CurrencyType.Gold)
++            {
++                client.Player.SendError("Unsupported currency type.");
++                return;
++            }
++            var price = currency == CurrencyType.Gold ? 0 : 1;
++
++            switch (transType)
++            {
++                case UPGRADE_PET_YARD: UpgradePetYard(client, currency, price); break;
++                case FEED_PET: FeedPet(client, petId1, slot, currency, price); break;
++                case FUSE_PET: FusePet(client, petId1, petId2, currency, price); break;
++            }
++        }
++
++        private static void FusePet(Client client, int petId1, int petId2, CurrencyType currency, int price)
++        {
++            if (!(client.Player.World is PetYard petYard))
++                return;
++            var pet1 = petYard.Pets.Values.FirstOrDefault(p => p.PetId == petId1);
++            var pet2 = petYard.Pets.Values.FirstOrDefault(p => p.PetId == petId2);
++            if (pet1 == null || pet2 == null || pet1 == pet2 || pet1.Rarity != pet2.Rarity ||
++                pet1.Rarity == PRarity.Divine || pet1.Rarity == PRarity.Undefined)
++                return;
++            if (!TryDeduct(client, currency, FuseCost[pet1.Rarity][price]))
++                return;
++
++            var initialSkin = pet1.SkinId;
++            var result = pet1.Fuse(pet2);
++            if (result != 0 && result < pet1.Ability.Length)
++                client.SendPacket(new NewAbility { Type = pet1.Ability[result].Type });
++            else
++            {
++                // evolved: reload the pet with its new look
++                petYard.LeaveWorld(pet1);
++                var player = client.Player;
++                var pet = new Pet(client.GameServer, null, new DbPet(client.Account, pet1.PetId));
++                if (pet1.PlayerOwner == player)
++                {
++                    player.Pet = pet;
++                    pet.PlayerOwner = player;
++                    pet.Move(player.X, player.Y);
++                }
++                else
++                {
++                    var sp = petYard.GetPetSpawnPosition();
++                    pet.Move(sp.X + 0.5f, sp.Y + 0.5f);
++                }
++                petYard.EnterWorld(pet);
++                client.SendPacket(new EvolvePet { PetId = pet1.PetId, InitialSkin = initialSkin, FinalSkin = result });
++            }
++
++            // the other pet is gone
++            client.GameServer.Database.RemovePet(client.Account, pet2.PetId);
++            if (client.Player.PetId == pet2.PetId)
++                client.Player.PetId = 0;
++            petYard.LeaveWorld(pet2);
++            client.SendPacket(new DeletePet { PetId = pet2.PetId });
++        }
++
++        private static void FeedPet(Client client, int petId, ObjectSlot slot, CurrencyType currency, int price)
++        {
++            if (!(client.Player.World is PetYard petYard))
++                return;
++            var pet = petYard.Pets.Values.FirstOrDefault(p => p.PetId == petId);
++            var player = client.Player;
++            if (pet == null || slot.SlotId >= player.Inventory.Length)
++                return;
++            var item = player.Inventory[slot.SlotId];
++            if (item == null || item.ObjectType != slot.ObjectType)
++                return;
++            if (!TryDeduct(client, currency, FeedCost[pet.Rarity][price]))
++                return;
++            player.Inventory[slot.SlotId] = null;
++            if (!pet.Feed(item.FeedPower))
++                player.SendInfo("This pet can't grow any more until you fuse it.");
++        }
++
++        private static void UpgradePetYard(Client client, CurrencyType currency, int price)
++        {
++            var acc = client.Account;
++            if (acc.PetYardType > 4)
++            {
++                client.Player.SendError("Your pet yard is already as big as it gets.");
++                return;
++            }
++            if (!TryDeduct(client, currency, PetYardCost[acc.PetYardType][price]))
++                return;
++            acc.PetYardType++;
++            acc.FlushAsync();
++            client.SendPacket(new PetYardUpdate { Type = acc.PetYardType });
++        }
++
++        private static bool TryDeduct(Client client, CurrencyType currency, int amount)
++        {
++            var acc = client.Account;
++            var db = client.GameServer.Database;
++            var player = client.Player;
++            if (currency == CurrencyType.Fame)
++            {
++                if (acc.Fame < amount)
++                {
++                    player.SendError("Not enough fame.");
++                    return false;
++                }
++                db.UpdateFame(acc, -amount);
++                player.CurrentFame = acc.Fame;
++                return true;
++            }
++            if (acc.Credits < amount)
++            {
++                player.SendError("Not enough gold.");
++                return false;
++            }
++            db.UpdateCredit(acc, -amount);
++            player.Credits = acc.Credits;
++            return true;
++        }
++    }
++
++    /// <summary>Make a pet your active pet (it follows you out of the yard), stop it, or release it.</summary>
++    public class ActivePetUpdateRequestHandler : IMessageHandler
++    {
++        public const int Follow = 1;
++        public const int Unfollow = 2;
++        public const int Release = 3;
++
++        public override MessageId MessageId => MessageId.ACTIVE_PET_UPDATE_REQUEST;
++
++        public override void Handle(Client client, NetworkReader rdr, ref TickTime time)
++        {
++            var command = rdr.ReadByte();
++            var instanceId = rdr.ReadInt32();
++            var player = client.Player;
++            if (!(player?.World is PetYard petYard))
++                return;
++            var pet = petYard.Pets.Values.FirstOrDefault(p => p.PetId == instanceId);
++            if (pet == null)
++                return;
++
++            switch (command)
++            {
++                case Follow:
++                    if (player.Pet != null)
++                        player.Pet.PlayerOwner = null;
++                    pet.PlayerOwner = player;
++                    player.Pet = pet;
++                    player.PetId = pet.PetId;
++                    client.SendPacket(new ActivePetUpdate { InstanceId = pet.PetId });
++                    break;
++                case Unfollow:
++                    pet.PlayerOwner = null;
++                    player.Pet = null;
++                    player.PetId = 0;
++                    client.SendPacket(new ActivePetUpdate { InstanceId = -1 });
++                    break;
++                case Release:
++                    if (pet.PlayerOwner != null)
++                    {
++                        pet.PlayerOwner.Pet = null;
++                        pet.PlayerOwner = null;
++                        player.PetId = 0;
++                        client.SendPacket(new ActivePetUpdate { InstanceId = -1 });
++                    }
++                    client.GameServer.Database.RemovePet(client.Account, pet.PetId);
++                    petYard.LeaveWorld(pet);
++                    client.SendPacket(new DeletePet { PetId = pet.PetId });
++                    break;
++            }
++        }
++    }
++}
+diff --git a/TK-Server/TKR.WorldServer/core/net/stats/StatDataType.cs b/TK-Server/TKR.WorldServer/core/net/stats/StatDataType.cs
+index ea0b1a7..2d49ca6 100644
+--- a/TK-Server/TKR.WorldServer/core/net/stats/StatDataType.cs
++++ b/TK-Server/TKR.WorldServer/core/net/stats/StatDataType.cs
+@@ -142,6 +142,23 @@
+         TALISMANDATA_6_STAT = 175,
+         TALISMANDATA_7_STAT = 176,
+         TALISMAN_EFFECT_MASK_STAT = 177,
++
++        // ROMTG-Doom pets (from NR-CORE); the client's StatData has the same numbers.
++        PetId = 180,
++        PetType = 181,
++        PetRarity = 182,
++        PetSkin = 183,          // a string: the skin's name
++        PetMaxLevel = 184,
++        PetAbilityPower1 = 185,
++        PetAbilityPower2 = 186,
++        PetAbilityPower3 = 187,
++        PetAbilityLevel1 = 188,
++        PetAbilityLevel2 = 189,
++        PetAbilityLevel3 = 190,
++        PetAbilityType1 = 191,
++        PetAbilityType2 = 192,
++        PetAbilityType3 = 193,
++        PetSkinType = 194,      // the look (a PetSkin type); not Skin (76), which TK's client takes as a player's
+         None = 255
+     }
+ }
+diff --git a/TK-Server/TKR.WorldServer/core/objects/Pet.cs b/TK-Server/TKR.WorldServer/core/objects/Pet.cs
+index 14ed51a..9eebb46 100644
+--- a/TK-Server/TKR.WorldServer/core/objects/Pet.cs
++++ b/TK-Server/TKR.WorldServer/core/objects/Pet.cs
+@@ -1,13 +1,316 @@
+-﻿namespace TKR.WorldServer.core.objects
++﻿using System;
++using System.Collections.Generic;
++using System.Linq;
++using TKR.Shared.database.pet;
++using TKR.Shared.resources;
++using TKR.WorldServer.core.net.stats;
++
++namespace TKR.WorldServer.core.objects
+ {
++    /// <summary>
++    /// A pet. Two kinds share this class:
++    /// - TK's own cosmetic followers (items with a "Pet" effect): just an object type.
++    /// - ROMTG-Doom: RotMG's pets, ported from NR-CORE (wServer/realm/entities/Pet.cs, AGPL-3.0):
++    ///   stored per account (DbPet), with a family, rarity, a skin and three abilities that level up
++    ///   when the pet is fed. Their behaviour (follow, heal, magic heal, attacks...) is
++    ///   logic/behaviors/pets, given to every RotMG pet by BehaviorDb.
++    /// </summary>
+     public class Pet : Entity, IPlayer
+     {
++        public Player PlayerOwner { get; set; }
++
++        // RotMG pets only (0 / null for TK's cosmetic followers).
++        public int PetId { get; private set; }
++        public PFamily Family { get; private set; }
++        public PRarity Rarity { get; private set; }
++        public int SkinId { get; private set; }
++        public string Skin { get; private set; }
++        public int MaxLevel { get; private set; }
++        public PetAbility[] Ability { get; private set; } = Array.Empty<PetAbility>();
++        public bool IsRotmgPet => _dbPet != null || Ability.Length > 0;
++
++        private readonly DbPet _dbPet;
++
++        /// <summary>TK's cosmetic follower.</summary>
+         public Pet(GameServer manager, Player player, ushort objType) : base(manager, objType) => PlayerOwner = player;
+ 
+-        public Player PlayerOwner { get; set; }
++        /// <summary>A RotMG pet from the account's pets.</summary>
++        public Pet(GameServer manager, Player playerOwner, DbPet pet) : base(manager, pet.ObjectType)
++        {
++            PlayerOwner = playerOwner;
++            _dbPet = pet;
++
++            var gameData = manager.Resources.GameData;
++            var petDesc = gameData.Pets[pet.ObjectType];
++            SetLook(pet.SkinType != 0 && gameData.PetSkins.ContainsKey((ushort)pet.SkinType)
++                ? (ushort)pet.SkinType
++                : DefaultSkin(gameData, petDesc));
++
++            Family = petDesc.Family;
++            SetDefaultSize(petDesc.MinSize);
++
++            PetId = pet.PetId;
++            Rarity = pet.Rarity;
++            MaxLevel = pet.MaxLevel;
++            Ability = new PetAbility[DbPet.NumAbilities];
++            for (var i = 0; i < Ability.Length; i++)
++                Ability[i] = new PetAbility(this, pet, i);
++        }
++
++        private static ushort DefaultSkin(XmlData gameData, PetDesc petDesc) =>
++            petDesc.DefaultSkin != null && gameData.IdToObjectType.TryGetValue(petDesc.DefaultSkin, out var skin) ? skin : petDesc.ObjectType;
++
++        private void SetLook(ushort skinType)
++        {
++            var gameData = GameServer.Resources.GameData;
++            SkinId = skinType;
++            Skin = gameData.PetSkins.TryGetValue(skinType, out var desc) ? desc.DisplayName : gameData.ObjectDescs[ObjectType].DisplayName;
++        }
++
++        protected override void ExportStats(IDictionary<StatDataType, object> stats, bool isOtherPlayer)
++        {
++            base.ExportStats(stats, isOtherPlayer);
++            if (!IsRotmgPet)
++                return;
++            stats[StatDataType.PetType] = (int)ObjectType;
++            stats[StatDataType.PetRarity] = (int)Rarity;
++            stats[StatDataType.PetSkinType] = SkinId;
++            stats[StatDataType.PetSkin] = Skin ?? "";
++            stats[StatDataType.PetId] = PetId;
++            stats[StatDataType.PetMaxLevel] = MaxLevel;
++            stats[StatDataType.PetAbilityPower1] = Ability[0].Power;
++            stats[StatDataType.PetAbilityPower2] = Ability[1].Power;
++            stats[StatDataType.PetAbilityPower3] = Ability[2].Power;
++            stats[StatDataType.PetAbilityLevel1] = Ability[0].Level;
++            stats[StatDataType.PetAbilityLevel2] = Ability[1].Level;
++            stats[StatDataType.PetAbilityLevel3] = Ability[2].Level;
++            stats[StatDataType.PetAbilityType1] = (int)Ability[0].Type;
++            stats[StatDataType.PetAbilityType2] = (int)Ability[1].Type;
++            stats[StatDataType.PetAbilityType3] = (int)Ability[2].Type;
++        }
+ 
+         public void Damage(int dmg, Entity src) { }
+ 
+         public bool IsVisibleToEnemy() => false;
++
++        /// <summary>Hatches an egg: a random pet of the egg's family and rarity, saved to the account.</summary>
++        public static Pet Create(GameServer manager, Player player, Item egg)
++        {
++            // there are no explicit uncommon/legendary pets, so this is needed
++            var rarity = egg.Rarity;
++            switch (rarity)
++            {
++                case PRarity.Uncommon: rarity = PRarity.Common; break;
++                case PRarity.Legendary: rarity = PRarity.Rare; break;
++            }
++
++            var petDesc = GetRandomPetDesc(manager, rarity, egg.Family);
++            if (petDesc == null)
++            {
++                player.SendError($"Bad egg. Family: {egg.Family} and Rarity: {egg.Rarity} combination does not exist.");
++                return null;
++            }
++
++            var acc = player.Client.Account;
++            var dbPet = manager.Database.NewPet(acc);
++            if (dbPet == null)
++            {
++                player.SendError("Pet cap has been reached. Please release a pet before adding new ones.");
++                return null;
++            }
++            dbPet.ObjectType = petDesc.ObjectType;
++            dbPet.Rarity = egg.Rarity;
++            dbPet.MaxLevel = GetRarityMaxLevel(egg.Rarity);
++
++            var pet = new Pet(manager, player, dbPet);
++            pet.Rarity = egg.Rarity;
++            pet.MaxLevel = GetRarityMaxLevel(egg.Rarity);
++            InitializeAbilities(manager, pet, petDesc);
++            pet.Feed(GetNeededPower(GetRarityMaxLevel(egg.Rarity - 1) - 1));
++            pet.Save();
++            return pet;
++        }
++
++        public static int GetNeededPower(int currentLevel) =>
++            (int)(20 * (1 - Math.Pow(1.08, currentLevel)) / (1 - 1.08)) + 1;
++
++        private static PetDesc GetRandomPetDesc(GameServer manager, PRarity rarity = PRarity.Undefined, PFamily family = PFamily.Undefined)
++        {
++            var petDescs = manager.Resources.GameData.Pets.Values
++                .Where(d => rarity == PRarity.Undefined || rarity == d.Rarity)
++                .Where(d => family == PFamily.Undefined || family == d.Family)
++                .ToArray();
++            return petDescs.Length == 0 ? null : petDescs[Random.Shared.Next(petDescs.Length)];
++        }
++
++        public static int GetRarityMaxLevel(PRarity rarity)
++        {
++            switch (rarity)
++            {
++                case PRarity.Divine: return 100;
++                case PRarity.Legendary: return 90;
++                case PRarity.Rare: return 70;
++                case PRarity.Uncommon: return 50;
++                case PRarity.Common: return 30;
++                default: return 1;
++            }
++        }
++
++        private static void InitializeAbilities(GameServer manager, Pet pet, PetDesc petDesc)
++        {
++            var abilities = manager.Resources.GameData.PetAbilities.Keys.Select(a => (PAbility)a).ToList();
++            if (abilities.Count <= 0)
++                throw new Exception("Missing pet abilities (is romtg_pets.xml in resources/xml? run rotmg-doom/scripts/pets.py).");
++
++            var ability = petDesc.FirstAbility;
++            if (ability == PAbility.Undefined)
++                ability = abilities[Random.Shared.Next(abilities.Count)];
++
++            for (var i = 0; i < DbPet.NumAbilities; i++)
++            {
++                pet.Ability[i].Initialize(ability, 1);
++
++                if (ability == PAbility.AttackClose || ability == PAbility.AttackFar || ability == PAbility.AttackMid)
++                {
++                    abilities.Remove(PAbility.AttackClose);
++                    abilities.Remove(PAbility.AttackFar);
++                    abilities.Remove(PAbility.AttackMid);
++                }
++                else
++                    abilities.Remove(ability);
++
++                if (abilities.Count == 0)
++                    break;
++                ability = abilities[Random.Shared.Next(abilities.Count)];
++            }
++        }
++
++        /// <summary>Feeds every ability (the second and third get less). False if there's nothing
++        /// left to level.</summary>
++        public bool Feed(int feedPower)
++        {
++            // don't feed abilities if the enabled abilities are maxed
++            if (Ability[0].Level >= MaxLevel && Rarity < PRarity.Uncommon ||
++                Ability[1].Level >= MaxLevel && Rarity < PRarity.Legendary ||
++                Ability[2].Level >= MaxLevel)
++                return false;
++
++            foreach (var a in Ability)
++                a.Feed(feedPower);
++            Save();
++            return true;
++        }
++
++        public void Save()
++        {
++            if (_dbPet == null)
++                return;
++            _dbPet.ObjectType = ObjectType;
++            _dbPet.Rarity = Rarity;
++            _dbPet.MaxLevel = MaxLevel;
++            _dbPet.SkinType = SkinId;
++            for (var i = 0; i < _dbPet.Ability.Length; i++)
++            {
++                _dbPet.Ability[i].Type = Ability[i].Type;
++                _dbPet.Ability[i].Level = Ability[i].Level;
++                _dbPet.Ability[i].Power = Ability[i].Power;
++            }
++            _dbPet.FlushAsync();
++        }
++
++        /// <summary>A pet stone: a new look, kept.</summary>
++        public void Reskin(ushort skinType)
++        {
++            SetLook(skinType);
++            Save();
++        }
++
++        /// <summary>Fuses `pet` into this one. Returns 1 or 2 when it only gained rarity, the new
++        /// skin's type when it evolved, 0 otherwise.</summary>
++        public int Fuse(Pet pet)
++        {
++            FuseStats(pet);
++
++            if (Rarity == PRarity.Uncommon || Rarity == PRarity.Legendary)
++            {
++                Save();
++                return Rarity == PRarity.Uncommon ? 1 : 2;
++            }
++
++            // evolve
++            var petDesc = GetRandomPetDesc(GameServer, Rarity, Family);
++            if (petDesc != null)
++            {
++                ObjectType = petDesc.ObjectType;
++                SetLook(DefaultSkin(GameServer.Resources.GameData, petDesc));
++                Save();
++                return SkinId;
++            }
++            return 0;
++        }
++
++        private void FuseStats(Pet pet)
++        {
++            for (var i = 0; i < Ability.Length; i++)
++                Ability[i].Initialize(Ability[i].Type, (Ability[i].Level + pet.Ability[i].Level) / 2);
++            MaxLevel = Math.Min(100, 20 + Ability[0].Level);
++            Rarity += 1;
++        }
++    }
++
++    public class PetAbility
++    {
++        public PAbility Type { get; private set; }
++        public int Level { get; private set; }
++        public int Power { get; private set; }
++
++        private readonly Pet _owner;
++        private readonly int _abilityId;
++        private int _nextPowerGoal;
++
++        public PetAbility(Pet owner, DbPet dbPet, int abilityId)
++        {
++            _owner = owner;
++            _abilityId = abilityId;
++
++            var ability = dbPet.Ability[abilityId];
++            Type = ability.Type;
++            Level = Math.Max(1, ability.Level);
++            Power = ability.Power;
++            _nextPowerGoal = Pet.GetNeededPower(Level);
++        }
++
++        public void Initialize(PAbility ability, int level)
++        {
++            Type = ability;
++            Level = Math.Max(1, level);
++            Power = Pet.GetNeededPower(Level - 1);
++            _nextPowerGoal = Pet.GetNeededPower(Level);
++        }
++
++        public void Feed(int feedPower)
++        {
++            if (Level >= _owner.MaxLevel)
++                return;
++
++            // the second and third abilities level slower
++            var p = feedPower;
++            switch (_abilityId)
++            {
++                case 0: break;
++                case 1: p = (int)(p * .65f); break;
++                case 2: p = (int)(p * .30f); break;
++                default: p = (int)(p * .10f); break;
++            }
++
++            Power += p;
++            while (Power >= _nextPowerGoal && Level < _owner.MaxLevel)
++            {
++                Level++;
++                if (Level >= _owner.MaxLevel)
++                    Power = _nextPowerGoal;
++                _nextPowerGoal = Pet.GetNeededPower(Level);
++            }
++        }
+     }
+ }
+diff --git a/TK-Server/TKR.WorldServer/core/objects/player/Player.UseItem.cs b/TK-Server/TKR.WorldServer/core/objects/player/Player.UseItem.cs
+index 943b89d..9d9349f 100644
+--- a/TK-Server/TKR.WorldServer/core/objects/player/Player.UseItem.cs
++++ b/TK-Server/TKR.WorldServer/core/objects/player/Player.UseItem.cs
+@@ -561,6 +561,14 @@ namespace TKR.WorldServer.core.objects
+                         AEPet(time, item, target, eff);
+                         break;
+ 
++                    // ROMTG-Doom pets: hatch an egg; a pet stone gives your active pet a new look.
++                    case ActivateEffects.CreatePet:
++                        AECreatePet(item);
++                        break;
++                    case ActivateEffects.PetSkin:
++                        AEPetSkin(item, eff);
++                        break;
++
+                     case ActivateEffects.Backpack:
+                         AEBackpack(time, item, target, slot, objId, eff);
+                         break;
+@@ -1311,6 +1319,35 @@ namespace TKR.WorldServer.core.objects
+             World.EnterWorld(pet);
+         }
+ 
++        /// <summary>ROMTG-Doom pets (from NR-CORE): a new pet of the egg's family and rarity, now one
++        /// of your pets (see it in your pet yard; it becomes your active pet if you have none).</summary>
++        private void AECreatePet(Item egg)
++        {
++            var pet = Pet.Create(GameServer, this, egg);
++            if (pet == null)
++                return;
++            SendInfo($"Your egg hatched: {pet.Skin} ({pet.Rarity} {pet.Family}). Visit your pet yard to see it.");
++            Client.SendPacket(new TKR.WorldServer.networking.packets.outgoing.pets.HatchPet { PetName = pet.Skin, PetSkin = pet.SkinId, ItemType = egg.ObjectType });
++            if (PetId == 0)
++            {
++                PetId = pet.PetId;
++                SpawnPetIfAttached(World);
++            }
++        }
++
++        /// <summary>ROMTG-Doom pets: a pet stone's look for your active pet.</summary>
++        private void AEPetSkin(Item item, ActivateEffect eff)
++        {
++            var skin = (ushort)eff.PetSkinId;
++            if (Pet == null || !Pet.IsRotmgPet || !GameServer.Resources.GameData.PetSkins.ContainsKey(skin))
++            {
++                SendError("You need an active pet for a pet stone.");
++                return;
++            }
++            Pet.Reskin(skin);
++            SendInfo($"Your pet is now {Pet.Skin}.");
++        }
++
+         private void AEPermaPet(TickTime time, Item item, Position target, ActivateEffect eff)
+         {
+             var type = GameServer.Resources.GameData.IdToObjectType[eff.ObjectId];
+diff --git a/TK-Server/TKR.WorldServer/core/objects/player/Player.cs b/TK-Server/TKR.WorldServer/core/objects/player/Player.cs
+index 9764eb3..c71e145 100644
+--- a/TK-Server/TKR.WorldServer/core/objects/player/Player.cs
++++ b/TK-Server/TKR.WorldServer/core/objects/player/Player.cs
+@@ -1398,15 +1398,21 @@ namespace TKR.WorldServer.core.objects
+             if (Client.Account.Hidden)
+                 return;
+ 
+-            // create new pet
++            // ROMTG-Doom pets: your active RotMG pet (PetId: one of your account's pets) follows
++            // you everywhere but your pet yard, where all your pets already roam.
++            if (owner is TKR.WorldServer.core.worlds.impl.PetYard yard)
++                yard.GiveStarterEgg(Client);
+             var petId = PetId;
+-            if (petId != 0)
++            if (petId != 0 && !(owner is TKR.WorldServer.core.worlds.impl.PetYard) && Client.Account.PetList.Contains(petId))
+             {
+-                //var pet = new Pet(GameServer, this, (ushort)petId);
+-                //pet.Move(X, Y);
+-                //owner.EnterWorld(pet);
+-                //pet.SetDefaultSize(pet.ObjectDesc.Size);
+-                //Pet = pet;
++                var dbPet = new TKR.Shared.database.pet.DbPet(Client.Account, petId);
++                if (dbPet.ObjectType != 0 && GameServer.Resources.GameData.Pets.ContainsKey(dbPet.ObjectType))
++                {
++                    var pet = new Pet(GameServer, this, dbPet);
++                    pet.Move(X, Y);
++                    owner.EnterWorld(pet);
++                    Pet = pet;
++                }
+             }
+         }
+ 
+diff --git a/TK-Server/TKR.WorldServer/core/objects/player/PlayerUpdate.cs b/TK-Server/TKR.WorldServer/core/objects/player/PlayerUpdate.cs
+index 37ccb25..76abbfb 100644
+--- a/TK-Server/TKR.WorldServer/core/objects/player/PlayerUpdate.cs
++++ b/TK-Server/TKR.WorldServer/core/objects/player/PlayerUpdate.cs
+@@ -69,6 +69,10 @@ namespace TKR.WorldServer.core.objects.player
+ 
+                 if (entity is Player || ActiveTiles.Contains(new IntPoint((int)entity.X, (int)entity.Y)))
+                     continue;
++                // ROMTG-Doom: in your pet yard every pet stays known, seen or not, so the Pet
++                // Upgrader lists them all at once (it only listed those in sight, 2026-11-12).
++                if (entity is Pet && World is TKR.WorldServer.core.worlds.impl.PetYard)
++                    continue;
+ 
+                 drops.Add(entity.Id);
+                 update.Drops.Add(entity.Id);
+@@ -250,9 +254,17 @@ namespace TKR.WorldServer.core.objects.player
+                 }
+             }
+ 
++            // ROMTG-Doom: only on tiles you can see, as GetDrops drops anything that isn't: a pet
++            // just out of sight was sent as new, dropped, and sent again every tick (the client
++            // kept re-creating your pets, so the Pet Upgrader never found them, 2026-11-12).
+             foreach (var entity in World.PlayersCollision.HitTest(x, y, VISIBILITY_RADIUS))
+-                if ((entity is Decoy || entity is Pet) && NewObjects.Add(entity))
++                if ((entity is Decoy || entity is Pet) && ActiveTiles.Contains(new IntPoint((int)entity.X, (int)entity.Y)) && NewObjects.Add(entity))
+                     update.NewObjs.Add(entity.ToDefinition());
++            // ...and in your pet yard, all your pets, wherever they are on the lawn.
++            if (World is TKR.WorldServer.core.worlds.impl.PetYard)
++                foreach (var pet in World.Pets.Values)
++                    if (NewObjects.Add(pet))
++                        update.NewObjs.Add(pet.ToDefinition());
+ 
+             var intPoint = new IntPoint(0, 0);
+             foreach (var entity in World.EnemiesCollision.HitTest(x, y, VISIBILITY_RADIUS))
+diff --git a/TK-Server/TKR.WorldServer/core/worlds/WorldManager.cs b/TK-Server/TKR.WorldServer/core/worlds/WorldManager.cs
+index 9daf251..9c8fd1c 100644
+--- a/TK-Server/TKR.WorldServer/core/worlds/WorldManager.cs
++++ b/TK-Server/TKR.WorldServer/core/worlds/WorldManager.cs
+@@ -102,6 +102,9 @@ namespace TKR.WorldServer.core.worlds
+                 case WorldResourceInstanceType.Vault:
+                     world = new VaultWorld(GameServer, nextId, worldResource, parent);
+                     break;
++                case WorldResourceInstanceType.Dungeon when worldResource.IdName == "Pet Yard":
++                    world = new PetYard(GameServer, nextId, worldResource, parent);   // ROMTG-Doom pets
++                    break;
+                 default:
+                     world = new World(GameServer, nextId, worldResource, parent);
+                     break;
+diff --git a/TK-Server/TKR.WorldServer/core/worlds/impl/NexusWorld.cs b/TK-Server/TKR.WorldServer/core/worlds/impl/NexusWorld.cs
+index 586138f..ab39832 100644
+--- a/TK-Server/TKR.WorldServer/core/worlds/impl/NexusWorld.cs
++++ b/TK-Server/TKR.WorldServer/core/worlds/impl/NexusWorld.cs
+@@ -58,6 +58,14 @@ namespace TKR.WorldServer.core.worlds.impl
+             EngineFuel = engine.EngineFuel;
+             EngineStageTime = engine.EngineStageTime;
+ 
++            // ROMTG-Doom pets: the way to your pet yard, beside where you arrive.
++            var arrivals = GetSpawnPoints();
++            if (arrivals.Length > 0 && GameServer.Resources.GameData.IdToObjectType.ContainsKey("Pet Yard Portal"))
++            {
++                var at = arrivals[arrivals.Length / 2].Key;
++                CreateNewEntity("Pet Yard Portal", at.X + 3.5f, at.Y + 0.5f);
++            }
++
+             var lootRegions = GetRegionPoints(TileRegion.Hallway_1);
+             foreach (var loot in lootRegions)
+                 Engine = (Engine)CreateNewEntity("Engine", loot.Key.X + 0.5f, loot.Key.Y + 0.5f);
+diff --git a/TK-Server/TKR.WorldServer/core/worlds/impl/PetYard.cs b/TK-Server/TKR.WorldServer/core/worlds/impl/PetYard.cs
+new file mode 100644
+index 0000000..4883d6c
+--- /dev/null
++++ b/TK-Server/TKR.WorldServer/core/worlds/impl/PetYard.cs
+@@ -0,0 +1,94 @@
++using System.Linq;
++using TKR.Shared.database.pet;
++using TKR.Shared.resources;
++using TKR.WorldServer.core.objects;
++using TKR.WorldServer.core.structures;
++using TKR.WorldServer.networking;
++
++// ROMTG-Doom: your pet yard, ported from NR-CORE (wServer/realm/worlds/logic/PetYard.cs, AGPL-3.0).
++// One per visit, only for its owner (like the vault): every pet you own roams the lawn
++// (PetRegion), and the Pet Upgrader there feeds and fuses them.
++namespace TKR.WorldServer.core.worlds.impl
++{
++    public sealed class PetYard : World
++    {
++        public int AccountId { get; private set; }
++        public Client Client { get; private set; }
++
++        public PetYard(GameServer gameServer, int id, WorldResource resource, World parent) : base(gameServer, id, resource, parent)
++        {
++        }
++
++        public override bool AllowedAccess(Client client) => AccountId == client.Account.AccountId || client.Rank.IsAdmin;
++
++        public void SetOwner(int accountId) => AccountId = accountId;
++
++        /// <summary>Its owner arrived: their pets come out.</summary>
++        public void SetClient(Client client)
++        {
++            if (Client != null)
++                return;
++            Client = client;
++            AccountId = client.Account.AccountId;
++
++            var acc = client.Account;
++            var removed = false;
++            foreach (var petId in acc.PetList)
++            {
++                var dbPet = new DbPet(acc, petId);
++                if (dbPet.ObjectType == 0 || !GameServer.Resources.GameData.Pets.ContainsKey(dbPet.ObjectType))
++                {
++                    removed = true;
++                    GameServer.Database.RemovePet(acc, petId);
++                    continue;
++                }
++                var pet = new Pet(GameServer, null, dbPet);
++                var pos = GetPetSpawnPosition();
++                pet.Move(pos.X + 0.5f, pos.Y + 0.5f);
++                EnterWorld(pet);
++            }
++            if (removed)
++                acc.Reload();
++        }
++
++        /// <summary>Your first visit (once per account): a common egg to hatch, if you have room.
++        /// Called when your character arrives in the yard.</summary>
++        public void GiveStarterEgg(Client client)
++        {
++            var acc = client.Account;
++            if (acc.PetList.Length > 0 || acc.StarterPetEgg || client.Player == null)
++                return;
++            var gameData = GameServer.Resources.GameData;
++            var egg = gameData.Items.Values.FirstOrDefault(i => i.Rarity == PRarity.Common &&
++                i.ActivateEffects.Any(a => a.Effect == ActivateEffects.CreatePet));
++            if (egg == null)
++                return;
++            var inv = client.Player.Inventory;
++            for (var slot = 4; slot < 12 && slot < inv.Length; slot++)
++                if (inv[slot] == null)
++                {
++                    inv[slot] = egg;
++                    acc.StarterPetEgg = true;
++                    acc.FlushAsync();
++                    client.Player.SendInfo($"Welcome to your pet yard! Here's a {egg.DisplayName} to hatch: use it from your inventory.");
++                    return;
++                }
++        }
++
++        public Position GetPetSpawnPosition()
++        {
++            var spots = Map.Regions.Where(t => t.Value == TileRegion.PetRegion).ToArray();
++            if (spots.Length == 0)
++                return new Position { X = Map.Width / 2, Y = Map.Height / 2 };
++            var spot = spots[System.Random.Shared.Next(spots.Length)];
++            return new Position { X = spot.Key.X, Y = spot.Key.Y };
++        }
++
++        public override void LeaveWorld(Entity entity)
++        {
++            base.LeaveWorld(entity);
++            if (entity is Player)
++                FlagForClose();
++        }
++    }
++}
+diff --git a/TK-Server/TKR.WorldServer/logic/BehaviorDb.cs b/TK-Server/TKR.WorldServer/logic/BehaviorDb.cs
+index b255465..ab8a9a3 100644
+--- a/TK-Server/TKR.WorldServer/logic/BehaviorDb.cs
++++ b/TK-Server/TKR.WorldServer/logic/BehaviorDb.cs
+@@ -57,6 +57,35 @@ namespace TKR.WorldServer.logic
+         {
+             if (Definitions.TryGetValue(entity.ObjectType, out Tuple<State, Loot> def))
+                 entity.SwitchTo(def.Item1);
++            else if (entity is Pet && entity.GameServer.Resources.GameData.Pets.ContainsKey(entity.ObjectType))
++                entity.SwitchTo(PetState);   // ROMTG-Doom: every RotMG pet
++        }
++
++        /// <summary>ROMTG-Doom: what every RotMG pet does; each behaviour only acts if the pet has
++        /// its ability (logic/behaviors/pets).</summary>
++        private static State _petState;
++        private static State PetState
++        {
++            get
++            {
++                if (_petState != null)
++                    return _petState;
++                var state = new State(
++                    new behaviors.pets.PetFollow(),
++                    new behaviors.pets.PetHeal(),
++                    new behaviors.pets.PetMagicHeal(),
++                    new behaviors.pets.PetShoot(PAbility.AttackClose, 3, 1.6),
++                    new behaviors.pets.PetShoot(PAbility.AttackMid, 6, 1.0),
++                    new behaviors.pets.PetShoot(PAbility.AttackFar, 9, 0.6),
++                    new behaviors.pets.PetZap(),
++                    new behaviors.pets.PetSavage(),
++                    new behaviors.pets.PetDecoy(),
++                    new behaviors.pets.PetRisingFury());
++                var d = new Dictionary<string, State>();
++                state.Resolve(d);
++                state.ResolveChildren(d);
++                return _petState = state;
++            }
+         }
+ 
+         private delegate ctor _();
+diff --git a/TK-Server/TKR.WorldServer/logic/behaviors/pets/PetBehaviors.cs b/TK-Server/TKR.WorldServer/logic/behaviors/pets/PetBehaviors.cs
+new file mode 100644
+index 0000000..6de5434
+--- /dev/null
++++ b/TK-Server/TKR.WorldServer/logic/behaviors/pets/PetBehaviors.cs
+@@ -0,0 +1,298 @@
++using System;
++using System.Linq;
++using TKR.Shared.resources;
++using TKR.WorldServer.core.net.datas;
++using TKR.WorldServer.core.objects;
++using TKR.WorldServer.core.structures;
++using TKR.WorldServer.core.worlds;
++using TKR.WorldServer.core.worlds.impl;
++using TKR.WorldServer.networking.packets.outgoing;
++using TKR.WorldServer.utils;
++
++// ROMTG-Doom: what RotMG's pets do, for TKR. Follow, Heal and Magic Heal are ported from NR-CORE
++// (wServer/logic/behaviors/PetBehaviors, AGPL-3.0); NR-CORE left the others empty, so the attacks,
++// Electric, Savage, Decoy and Rising Fury are written here after RotMG's descriptions.
++//
++// Unlike NR-CORE, nothing about a pet is kept in the behaviour itself: one set of these serves
++// every pet (BehaviorDb.PetState), so the pet and its ability are looked up from the host each tick.
++namespace TKR.WorldServer.logic.behaviors.pets
++{
++    internal abstract class PetBehavior : Behavior
++    {
++        private readonly bool _requiresOwner;
++        protected PAbility AbilityType { get; }
++
++        protected PetBehavior(PAbility ability, bool requiresOwner = true)
++        {
++            AbilityType = ability;
++            _requiresOwner = requiresOwner;
++        }
++
++        protected override void OnStateEntry(Entity host, TickTime time, ref object state) => state = 0;
++
++        protected sealed override void TickCore(Entity host, TickTime time, ref object state)
++        {
++            if (!(host is Pet pet) || pet.World == null)
++                return;
++            var ability = pet.Ability.FirstOrDefault(a => a.Type == AbilityType);
++            if (ability == null || ability.Level <= 0)
++                return;
++            var owner = pet.PlayerOwner;
++            if (_requiresOwner && (owner == null || owner.World != pet.World || owner.Dead))
++                return;
++
++            var cool = state is int c ? c : 0;
++            if (cool > 0)
++            {
++                state = cool - time.ElapsedMsDelta;
++                return;
++            }
++            state = Act(pet, owner, ability, time);
++        }
++
++        /// <summary>Does the ability once; returns the milliseconds until it may again.</summary>
++        protected abstract int Act(Pet pet, Player owner, PetAbility ability, TickTime time);
++
++        /// <summary>NR-CORE's cooldown curve: long at level 1, short at high levels.</summary>
++        protected static int DiminishingReturnsCooldown(int min, int max, int level, double scale)
++        {
++            var mult = Math.Max(0, level) / scale;
++            var trinum = (Math.Sqrt(8.0 * mult + 1.0) - 1.0) / 2.0;
++            return Math.Max(min * 1000, (int)((max - (trinum * scale) + min) * 1000));
++        }
++
++        protected static void Trail(Entity from, Entity to, uint color) =>
++            from.World.BroadcastIfVisible(new ShowEffect
++            {
++                EffectType = EffectType.Trail,
++                TargetObjectId = from.Id,
++                Pos1 = new Position { X = to.X, Y = to.Y },
++                Color = new ARGB(color)
++            }, from);
++
++        protected static void Note(Player owner, string text, uint color) =>
++            owner.World.BroadcastIfVisible(new Notification { ObjectId = owner.Id, Message = text, Color = new ARGB(color) }, owner);
++
++        protected static Enemy NearestEnemy(Entity from, double range) =>
++            from.GetNearestEntity(range, false, e => e is Enemy en && !en.HasConditionEffect(ConditionEffectIndex.Invincible)) as Enemy;
++    }
++
++    /// <summary>Stays close to its player (ported from NR-CORE's PetFollow); with no player (in
++    /// the pet yard), roams the lawn (PetRegion) like NR-CORE's PetWander.</summary>
++    internal class PetFollow : Behavior
++    {
++        private class Roam { public float X, Y; public int Wait; }
++
++        private static void Wander(Pet pet, TickTime time, ref object state)
++        {
++            var r = state as Roam;
++            if (r == null)
++                state = r = new Roam { X = pet.X, Y = pet.Y, Wait = Random.Shared.Next(500, 3000) };
++            if (r.Wait > 0)
++            {
++                r.Wait -= time.ElapsedMsDelta;
++                return;
++            }
++            var dx = r.X - pet.X;
++            var dy = r.Y - pet.Y;
++            var len = Math.Sqrt(dx * dx + dy * dy);
++            if (len < 0.2)
++            {
++                // somewhere new on the lawn, not far
++                for (var tries = 0; tries < 6; tries++)
++                {
++                    var tx = pet.X + (float)(Random.Shared.NextDouble() * 6 - 3);
++                    var ty = pet.Y + (float)(Random.Shared.NextDouble() * 6 - 3);
++                    if (tx < 1 || ty < 1 || tx >= pet.World.Map.Width - 1 || ty >= pet.World.Map.Height - 1)
++                        continue;
++                    var tile = pet.World.Map[(int)tx, (int)ty];
++                    if (tile != null && tile.Region == TileRegion.PetRegion)
++                    {
++                        r.X = tx;
++                        r.Y = ty;
++                        break;
++                    }
++                }
++                r.Wait = Random.Shared.Next(1000, 4000);
++                return;
++            }
++            var dist = (float)Math.Min(len, pet.GetSpeed(2.0f) * time.DeltaTime);
++            pet.ValidateAndMove(pet.X + (float)(dx / len) * dist, pet.Y + (float)(dy / len) * dist);
++        }
++
++        protected override void TickCore(Entity host, TickTime time, ref object state)
++        {
++            if (!(host is Pet pet) || host.World == null)
++                return;
++            if (pet.PlayerOwner == null)
++            {
++                Wander(pet, time, ref state);   // in the yard: roam the lawn
++                return;
++            }
++            var player = host.World.GetEntity(pet.PlayerOwner.Id) as Player;
++            if (player == null)
++            {
++                // the player left this world: so does the pet (the pet yard keeps its pets)
++                if (!(host.World is PetYard))
++                    host.World.LeaveWorld(host);
++                return;
++            }
++            var dx = player.X - host.X;
++            var dy = player.Y - host.Y;
++            var len = Math.Sqrt(dx * dx + dy * dy);
++            if (len > 20)
++                host.Move(player.X, player.Y);
++            else if (len > 1)
++            {
++                var speed = len > 2 ? 0.7f + player.Stats[4] / 100f : 0.5f;
++                var dist = host.GetSpeed(speed * 5.55f + 0.74f) * time.DeltaTime;
++                dist = (float)Math.Min(dist, len - 0.8);
++                host.ValidateAndMove(host.X + (float)(dx / len) * dist, host.Y + (float)(dy / len) * dist);
++            }
++        }
++    }
++
++    /// <summary>Heals its player now and then (ported from NR-CORE's PetHeal).</summary>
++    internal class PetHeal : PetBehavior
++    {
++        public PetHeal() : base(PAbility.Heal) { }
++
++        protected override int Act(Pet pet, Player owner, PetAbility ability, TickTime time)
++        {
++            var cool = DiminishingReturnsCooldown(1, 10, ability.Level, 0.5264);
++            var heal = (int)Math.Round(5.83283522976111E-07 * Math.Pow(ability.Level, 4)
++                - 0.0000469692310249639 * Math.Pow(ability.Level, 3)
++                + 0.0076256636031656 * Math.Pow(ability.Level, 2)
++                - 0.0776182463432286 * ability.Level + 10.0998122309192);
++            var newHp = Math.Min(owner.Stats[0], owner.HP + heal);
++            if (newHp == owner.HP)
++                return 250;
++            if (owner.HasConditionEffect(ConditionEffectIndex.Sick))
++            {
++                Trail(pet, owner, 0xffffffff);
++                Note(owner, "No Effect", 0xffff0000);
++                return cool;
++            }
++            Note(owner, "+" + (newHp - owner.HP), 0xff00ff00);
++            owner.HP = newHp;
++            Trail(pet, owner, 0xffffffff);
++            return cool;
++        }
++    }
++
++    /// <summary>Restores its player's MP now and then (ported from NR-CORE's PetMagicHeal).</summary>
++    internal class PetMagicHeal : PetBehavior
++    {
++        public PetMagicHeal() : base(PAbility.MagicHeal) { }
++
++        protected override int Act(Pet pet, Player owner, PetAbility ability, TickTime time)
++        {
++            var cool = DiminishingReturnsCooldown(1, 10, ability.Level, 0.5264);
++            var heal = (int)Math.Round(6.0 + ability.Level * 0.4 + Math.Pow(ability.Level, 2) * 0.004);
++            var newMp = Math.Min(owner.Stats[1], owner.MP + heal);
++            if (newMp == owner.MP)
++                return 250;
++            if (owner.HasConditionEffect(ConditionEffectIndex.Quiet))
++            {
++                Note(owner, "No Effect", 0xffff0000);
++                return cool;
++            }
++            Note(owner, "+" + (newMp - owner.MP), 0xff6084e0);
++            owner.MP = newMp;
++            Trail(pet, owner, 0xff6084e0);
++            return cool;
++        }
++    }
++
++    /// <summary>Attack Close / Mid / Far: hits the nearest enemy in its range. Close hits hardest,
++    /// far reaches furthest.</summary>
++    internal class PetShoot : PetBehavior
++    {
++        private readonly double _range;
++        private readonly double _damageScale;
++
++        public PetShoot(PAbility ability, double range, double damageScale) : base(ability)
++        {
++            _range = range;
++            _damageScale = damageScale;
++        }
++
++        protected override int Act(Pet pet, Player owner, PetAbility ability, TickTime time)
++        {
++            var enemy = NearestEnemy(pet, _range);
++            if (enemy == null)
++                return 250;
++            var damage = (int)((10 + ability.Level * 2.5) * _damageScale);
++            Trail(pet, enemy, 0xffffd060);
++            enemy.Damage(owner, ref time, damage, false);
++            return Math.Max(400, 2000 - ability.Level * 15);
++        }
++    }
++
++    /// <summary>Electric: zaps the nearest enemy, and stuns it briefly.</summary>
++    internal class PetZap : PetBehavior
++    {
++        public PetZap() : base(PAbility.Electric) { }
++
++        protected override int Act(Pet pet, Player owner, PetAbility ability, TickTime time)
++        {
++            var enemy = NearestEnemy(pet, 6);
++            if (enemy == null)
++                return 250;
++            Trail(pet, enemy, 0xff40c0ff);
++            enemy.Damage(owner, ref time, 15 + ability.Level * 3, true,
++                false, new ConditionEffect(ConditionEffectIndex.Paralyzed, 500 + ability.Level * 15));
++            return DiminishingReturnsCooldown(1, 8, ability.Level, 0.5264);
++        }
++    }
++
++    /// <summary>Savage: lunges at the nearest close enemy and bites, ignoring its defense.</summary>
++    internal class PetSavage : PetBehavior
++    {
++        public PetSavage() : base(PAbility.Savage) { }
++
++        protected override int Act(Pet pet, Player owner, PetAbility ability, TickTime time)
++        {
++            var enemy = NearestEnemy(pet, 4);
++            if (enemy == null)
++                return 250;
++            Trail(pet, enemy, 0xffff3030);
++            enemy.Damage(owner, ref time, 20 + ability.Level * 4, true);
++            return DiminishingReturnsCooldown(1, 6, ability.Level, 0.5264);
++        }
++    }
++
++    /// <summary>Decoy: drops a decoy of its player for enemies to chase.</summary>
++    internal class PetDecoy : PetBehavior
++    {
++        public PetDecoy() : base(PAbility.Decoy) { }
++
++        protected override int Act(Pet pet, Player owner, PetAbility ability, TickTime time)
++        {
++            if (NearestEnemy(pet, 10) == null)
++                return 500;
++            var decoy = new Decoy(owner, 1500 + ability.Level * 30);
++            decoy.Move(pet.X, pet.Y);
++            pet.World.EnterWorld(decoy);
++            return DiminishingReturnsCooldown(5, 30, ability.Level, 0.5264);
++        }
++    }
++
++    /// <summary>Rising Fury: when its player is badly hurt, makes them berserk and damaging for a while.</summary>
++    internal class PetRisingFury : PetBehavior
++    {
++        public PetRisingFury() : base(PAbility.RisingFury) { }
++
++        protected override int Act(Pet pet, Player owner, PetAbility ability, TickTime time)
++        {
++            if (owner.HP > owner.Stats[0] * 0.3)
++                return 250;
++            var duration = 2000 + ability.Level * 40;
++            owner.ApplyConditionEffect(new ConditionEffect(ConditionEffectIndex.Berserk, duration),
++                new ConditionEffect(ConditionEffectIndex.Damaging, duration));
++            Trail(pet, owner, 0xffff8000);
++            Note(owner, "Rising Fury!", 0xffff8000);
++            return DiminishingReturnsCooldown(10, 60, ability.Level, 0.5264);
++        }
++    }
++}
+diff --git a/TK-Server/TKR.WorldServer/networking/packets/MessageIds.cs b/TK-Server/TKR.WorldServer/networking/packets/MessageIds.cs
+index ff21cdc..c46691d 100644
+--- a/TK-Server/TKR.WorldServer/networking/packets/MessageIds.cs
++++ b/TK-Server/TKR.WorldServer/networking/packets/MessageIds.cs
+@@ -117,5 +117,15 @@ public enum MessageId : byte
+     INVITED_TO_PARTY = 90,
+     JOIN_PARTY = 91,
+     POTION_STORAGE_INTERACTION = 92,
+-    ENGINE_FUEL_ACTION = 102
++    ENGINE_FUEL_ACTION = 102,
++
++    // ROMTG-Doom pets (from NR-CORE); the client's GameServerConnection uses the same numbers.
++    PET_UPGRADE_REQUEST = 103,
++    ACTIVE_PET_UPDATE_REQUEST = 104,
++    ACTIVE_PET_UPDATE = 105,
++    NEW_ABILITY = 106,
++    PET_YARD_UPDATE = 107,
++    EVOLVE_PET = 108,
++    DELETE_PET = 109,
++    HATCH_PET = 110
+ }
+\ No newline at end of file
+diff --git a/TK-Server/TKR.WorldServer/networking/packets/outgoing/pets/PetMessages.cs b/TK-Server/TKR.WorldServer/networking/packets/outgoing/pets/PetMessages.cs
+new file mode 100644
+index 0000000..0d6616e
+--- /dev/null
++++ b/TK-Server/TKR.WorldServer/networking/packets/outgoing/pets/PetMessages.cs
+@@ -0,0 +1,80 @@
++using TKR.Shared;
++using TKR.Shared.resources;
++
++// ROMTG-Doom: RotMG's pet messages to the client, ported from NR-CORE (AGPL-3.0). Same fields
++// and order as the NR 27.7 client reads them; the numbers are TKR's (MessageId).
++namespace TKR.WorldServer.networking.packets.outgoing.pets
++{
++    /// <summary>An egg hatched: the new pet's name and skin, for the hatch dialog.</summary>
++    public class HatchPet : OutgoingMessage
++    {
++        public string PetName { get; set; }
++        public int PetSkin { get; set; }
++        public int ItemType { get; set; }   // not sent: NR's client doesn't read it
++
++        public override MessageId MessageId => MessageId.HATCH_PET;
++
++        public override void Write(NetworkWriter wtr)
++        {
++            wtr.WriteUTF16(PetName ?? "");
++            wtr.Write(PetSkin);
++        }
++    }
++
++    /// <summary>Your active pet (the one that follows you); -1 for none.</summary>
++    public class ActivePetUpdate : OutgoingMessage
++    {
++        public int InstanceId { get; set; }
++
++        public override MessageId MessageId => MessageId.ACTIVE_PET_UPDATE;
++
++        public override void Write(NetworkWriter wtr) => wtr.Write(InstanceId);
++    }
++
++    /// <summary>Fusing unlocked a pet's next ability.</summary>
++    public class NewAbility : OutgoingMessage
++    {
++        public PAbility Type { get; set; }
++
++        public override MessageId MessageId => MessageId.NEW_ABILITY;
++
++        public override void Write(NetworkWriter wtr) => wtr.Write((int)Type);
++    }
++
++    /// <summary>Your pet yard's new size.</summary>
++    public class PetYardUpdate : OutgoingMessage
++    {
++        public int Type { get; set; }
++
++        public override MessageId MessageId => MessageId.PET_YARD_UPDATE;
++
++        public override void Write(NetworkWriter wtr) => wtr.Write(Type);
++    }
++
++    /// <summary>A fusion evolved a pet into a new kind.</summary>
++    public class EvolvePet : OutgoingMessage
++    {
++        public int PetId { get; set; }
++        public int InitialSkin { get; set; }
++        public int FinalSkin { get; set; }
++
++        public override MessageId MessageId => MessageId.EVOLVE_PET;
++
++        public override void Write(NetworkWriter wtr)
++        {
++            wtr.Write(PetId);
++            wtr.Write(InitialSkin);
++            wtr.Write(FinalSkin);
++        }
++    }
++
++    /// <summary>A pet is gone (released, or fused into another).</summary>
++    public class DeletePet : OutgoingMessage
++    {
++        public int PetId { get; set; }
++
++        public override MessageId MessageId => MessageId.DELETE_PET;
++
++        public override void Write(NetworkWriter wtr) => wtr.Write(PetId);
++    }
++}

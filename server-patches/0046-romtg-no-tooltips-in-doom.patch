@@ -1,0 +1,15 @@
+diff --git a/TK-Client/src/com/company/assembleegameclient/ui/tooltip/ToolTip.as b/TK-Client/src/com/company/assembleegameclient/ui/tooltip/ToolTip.as
+index c59f994..4a2e6ee 100644
+--- a/TK-Client/src/com/company/assembleegameclient/ui/tooltip/ToolTip.as
++++ b/TK-Client/src/com/company/assembleegameclient/ui/tooltip/ToolTip.as
+@@ -113,7 +113,9 @@ public class ToolTip extends Sprite
+    private function onAddedToStage(event:Event) : void
+    {
+       current = this;
+-      this.visible = true;
++      // Not while Doom has the controls: the pointer can rest over the side panel then, and
++      // its tooltips showed over it while you played (Ryan, 2026-11-15).
++      this.visible = !DoomLink.controlling;
+       this.draw();
+       if(this.followMouse_)
+       {

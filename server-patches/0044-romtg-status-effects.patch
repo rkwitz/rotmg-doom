@@ -1,0 +1,106 @@
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index ca835d3..d6edae2 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -55,6 +55,7 @@ package romtg
+     *   cash CREDITS FAME     your gold and fame
+     *   j ID TYPE X Y SIZE MINE aANGLE [RGB MS INTENSITY]   a shot (its flight direction, particle trail)
+     *   efx TYPE TARGET X1 Y1 X2 Y2 RGB SECONDS   an effect the server shows (see effect)
++    *   cond C0 C1            your status effects (RotMG's condition words; Doom draws blind, drunk...)
+     *   heal OID 1|0          a character is under Healing (RotMG's green sparkles round it)
+     *   nm OID RGB NAME       another player's name tag and its colour
+     *   tip X Y W H | tip -   a tooltip is showing at X Y W H (RotMG stage units), or none
+@@ -135,6 +136,7 @@ package romtg
+       private static var menuSent:String = "";
+       private static var namesSent:Dictionary = new Dictionary();
+       private static var healingSent:Dictionary = new Dictionary();
++      private static var condSent:String = "";
+       private static var meHealing:int = -1;   // object id: "RGB NAME" sent
+       private static var dialogShifted:Boolean = false;
+       private static var posAt:int = 0;
+@@ -606,6 +608,13 @@ package romtg
+          {
+             sendWalking(player, now);
+          }
++         // Your status effects for Doom (blind, drunk, confused...), RotMG's two words of them.
++         var cond:String = player.condition_[0] + " " + player.condition_[1];
++         if (cond != condSent)
++         {
++            condSent = cond;
++            send("cond " + cond);
++         }
+          var myHeal:int = player.isHealing() ? 1 : 0;
+          if (myHeal != meHealing)
+          {
+diff --git a/TK-Client/src/romtg/HudWindow.as b/TK-Client/src/romtg/HudWindow.as
+index d329836..801e82b 100644
+--- a/TK-Client/src/romtg/HudWindow.as
++++ b/TK-Client/src/romtg/HudWindow.as
+@@ -6,6 +6,7 @@ package romtg
+    import com.company.assembleegameclient.objects.Player;
+    import com.company.assembleegameclient.ui.TextBox;
+    import com.company.assembleegameclient.ui.TextBoxLine;
++   import com.company.assembleegameclient.util.ConditionEffect;
+    import com.company.assembleegameclient.util.TextureRedrawer;
+    import com.company.ui.SimpleText;
+    import com.company.util.AssetLibrary;
+@@ -121,6 +122,8 @@ package romtg
+          window.y = -20000;
+          root = new Sprite();
+          root.mouseEnabled = root.mouseChildren = false;
++         statusIcons = null;
++         shownStatus = "";
+          root.visible = false;   // until placed()
+          window.stage.addChild(root);
+          credits = makeCredits();
+@@ -328,6 +331,7 @@ package romtg
+ 
+          // Your own health, as RotMG shows it under your character: bottom middle.
+          drawMyHealth(player, w);
++         drawMyStatus(player, w, now);
+ 
+          // Status texts over you (+EXP, healing...): just above your health bar at the bottom,
+          // where RotMG shows them over your character, rising and fading. Ones that came
+@@ -353,6 +357,42 @@ package romtg
+          }
+       }
+ 
++      private static var statusIcons:Sprite = null;
++      private static var shownStatus:String = "";
++
++      /** Your status effect icons (slowed, blind, healing...), as RotMG shows them over your
++       *  character (ConditionEffect.getConditionEffectIcons, the same frames), in a row over
++       *  your health bar (Ryan, 2026-11-15: status effects in Doom). */
++      private static function drawMyStatus(player:Player, w:Number, now:int) : void
++      {
++         if (statusIcons == null)
++         {
++            statusIcons = new Sprite();
++            root.addChild(statusIcons);
++         }
++         var frame:int = int(now / 500);
++         var key:String = player.condition_[0] + "/" + player.condition_[1] + "/" + frame + "@" + int(w);
++         if (key == shownStatus)
++         {
++            return;
++         }
++         shownStatus = key;
++         statusIcons.removeChildren();
++         var icons:Vector.<BitmapData> = new Vector.<BitmapData>();
++         ConditionEffect.getConditionEffectIcons(player.condition_[0], icons, frame);
++         ConditionEffect.getConditionEffectIcons2(player.condition_[1], icons, frame);
++         var size:Number = 18, gap:Number = 3;   // under your health bar (texts rise over it)
++         var left:Number = w / 2 - (icons.length * (size + gap) - gap) / 2;
++         for (var i:int = 0; i < icons.length; i++)
++         {
++            var b:Bitmap = new Bitmap(icons[i]);
++            b.width = b.height = size;
++            b.x = left + i * (size + gap);
++            b.y = 600 - 46 + 5 * MY_BAR + 3;
++            statusIcons.addChild(b);
++         }
++      }
++
+       private static function drawMyHealth(player:Player, w:Number) : void
+       {
+          var key:String = player.hp_ + "/" + player.maxHP_ + "@" + int(w);

@@ -1,0 +1,23 @@
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index 22173d8..1ce38db 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -36,7 +36,8 @@ package romtg
+     *   j ID TYPE X Y SIZE    a projectile appeared (TYPE: its picture's object type)
+     *   uj ID X Y             a projectile moved
+     *   rj ID                 projectile ID is gone
+-    *   p X Y SPEED           where you are, and your base speed in tiles per second
++    *   p X Y SPEED MS        where you are, your base speed in tiles per second, and when (the
++    *                         client's clock, ms: Doom replays your path on time, see the handler)
+     *   w TYPE                the weapon you hold (-1: none)
+     *   me ID                 your own object's id (never drawn: you are Doom's camera)
+     *   quest ID X Y HP MAX NAME | quest -1   the quest (boss) RotMG points you to, or none
+@@ -290,7 +291,7 @@ package romtg
+             posAt = now;
+             lastX = player.x_;
+             lastY = player.y_;
+-            send("p " + player.x_.toFixed(4) + " " + player.y_.toFixed(4) + " " + tilesPerSecond.toFixed(4));
++            send("p " + player.x_.toFixed(4) + " " + player.y_.toFixed(4) + " " + tilesPerSecond.toFixed(4) + " " + now);
+          }
+          // You are the camera in Doom: the bridge must never draw you as an object (your own
+          // object can be reported before map.player_ is set).

@@ -1,0 +1,25 @@
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index 42f23fa..156b2d1 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -699,13 +699,13 @@ package romtg
+             // A dialog or popup opens in the play area, which Doom covers: the swapper shows
+             // RotMG over Doom while one is open (the potion storage showed only in the corner
+             // view, 2026-11-15).
+-            // Dragging an item out of the side panel (Tab): RotMG's ground is shown over Doom
+-            // till you let go, so it drops there into a bag as in RotMG (Ryan, 2026-11-16:
+-            // dropping didn't work in Doom; the release landed on Doom's window).
+-            // (Only once it leaves the panel: moving items about in it shows no ground.)
+-            var offPanel:Boolean = map.stage != null && map.stage.stageWidth > 0
+-               && map.stage.mouseX / map.stage.stageWidth * 800 < 600;
+-            var dragLine:String = InteractiveItemTile.draggingNow && (offPanel || dragSent == "drag 1") ? "drag 1" : "drag 0";
++            // Dragging an item (Tab, the side panel): the swapper drops it on the ground if you let
++            // go over Doom (duo.watch_drop, `dragdrop`), where RotMG never sees the release (Ryan,
++            // 2026-11-16: dropping didn't work in Doom).
++            // (From the start of the drag: RotMG stops seeing the mouse once it leaves the panel,
++            // so waiting for it to be seen off the panel meant dragging far, or fast; Ryan,
++            // 2026-11-16. The swapper only drops it if you let go over Doom.)
++            var dragLine:String = InteractiveItemTile.draggingNow ? "drag 1" : "drag 0";
+             if (dragLine != dragSent)
+             {
+                dragSent = dragLine;

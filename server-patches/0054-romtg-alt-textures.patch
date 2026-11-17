@@ -1,0 +1,64 @@
+diff --git a/TK-Client/src/com/company/assembleegameclient/objects/GameObject.as b/TK-Client/src/com/company/assembleegameclient/objects/GameObject.as
+index b3d0551..55449f1 100644
+--- a/TK-Client/src/com/company/assembleegameclient/objects/GameObject.as
++++ b/TK-Client/src/com/company/assembleegameclient/objects/GameObject.as
+@@ -498,6 +498,10 @@ public class GameObject extends BasicObject {
+         }
+     }
+ 
++    /** ROMTG-Doom: which of its pictures it shows (0 its own, else an AltTexture id; a boss
++     *  changing its look), for romtg.DoomLink `alt`. */
++    public var doomAltTexture:int = 0;
++
+     public function setAltTexture(altTextureId:int):void {
+         var altTextureData:TextureData = null;
+         var textureData:TextureData = ObjectLibrary.typeToTextureData_[this.objectType_];
+@@ -510,6 +514,7 @@ public class GameObject extends BasicObject {
+                 return;
+             }
+         }
++        this.doomAltTexture = altTextureId;
+         this.texture_ = altTextureData.texture_;
+         this.mask_ = altTextureData.mask_;
+         this.animatedChar_ = altTextureData.animatedChar_;
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index 1e749d9..0a774f8 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -57,6 +57,7 @@ package romtg
+     *   j ID TYPE X Y SIZE MINE aANGLE [RGB MS INTENSITY]   a shot (its flight direction, particle trail)
+     *   efx TYPE TARGET X1 Y1 X2 Y2 RGB SECONDS   an effect the server shows (see effect)
+     *   cond C0 C1            your status effects (RotMG's condition words; Doom draws blind, drunk...)
++    *   alt OID N             it shows its picture N (0 its own, else its AltTexture N: a boss's change)
+     *   an OID ACTION FACING  a character stands (0), walks (1) or attacks (2), facing FACING (radians)
+     *   heal OID 1|0          a character is under Healing (RotMG's green sparkles round it)
+     *   nm OID RGB NAME       another player's name tag and its colour
+@@ -143,6 +144,7 @@ package romtg
+       private static var namesSent:Dictionary = new Dictionary();
+       private static var healingSent:Dictionary = new Dictionary();
+       private static var animSent:Dictionary = new Dictionary();
++      private static var altSent:Dictionary = new Dictionary();
+       private static var condSent:String = "";
+       private static var meHealing:int = -1;   // object id: "RGB NAME" sent
+       private static var dialogShifted:Boolean = false;
+@@ -167,6 +169,7 @@ package romtg
+          send("map " + clean(m.name_) + " " + m.width_ + " " + m.height_);
+          speedSent = gridSent = pushSent = "";   // a new map: the bridge forgot them; say them again
+          animSent = new Dictionary();
++         altSent = new Dictionary();
+          namesSent = new Dictionary();   // and the name tags (object ids repeat from map to map:
+          healingSent = new Dictionary(); // a name not sent again never showed, Ryan 2026-11-15)
+       }
+@@ -738,6 +741,12 @@ package romtg
+                   added(go);
+                   continue;
+                }
++               // A boss (or anything) changing its look (its AltTexture, Ryan 2026-11-16): Doom too.
++               if (int(altSent[go.objectId_]) != go.doomAltTexture)
++               {
++                  altSent[go.objectId_] = go.doomAltTexture;
++                  send("alt " + go.objectId_ + " " + go.doomAltTexture);
++               }
+                // Characters' animation (walking, attacking, which way they face) for Doom.
+                if (go.animatedChar_ != null)
+                {

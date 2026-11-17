@@ -1,0 +1,333 @@
+diff --git a/TK-Client/src/kabam/rotmg/classes/control/BuyCharacterSkinCommand.as b/TK-Client/src/kabam/rotmg/classes/control/BuyCharacterSkinCommand.as
+index 774f45d..ac5706c 100644
+--- a/TK-Client/src/kabam/rotmg/classes/control/BuyCharacterSkinCommand.as
++++ b/TK-Client/src/kabam/rotmg/classes/control/BuyCharacterSkinCommand.as
+@@ -59,7 +59,7 @@ package kabam.rotmg.classes.control
+       
+       private function isSkinAffordable() : Boolean
+       {
+-         return this.model.getCredits() >= this.skin.cost;
++         return this.model.getFame() >= this.skin.cost;
+       }
+       
+       private function purchaseSkin() : void
+@@ -70,7 +70,7 @@ package kabam.rotmg.classes.control
+       
+       private function enterGetCreditsFlow() : void
+       {
+-         this.openDialog.dispatch(new NotEnoughGoldDialog());
++         this.openDialog.dispatch(new NotEnoughGoldDialog("This skin costs " + String(this.skin.cost) + " Fame.", "Not Enough Fame"));
+       }
+    }
+ }
+diff --git a/TK-Client/src/kabam/rotmg/classes/control/ParseCharListXmlCommand.as b/TK-Client/src/kabam/rotmg/classes/control/ParseCharListXmlCommand.as
+index 87f094b..d464519 100644
+--- a/TK-Client/src/kabam/rotmg/classes/control/ParseCharListXmlCommand.as
++++ b/TK-Client/src/kabam/rotmg/classes/control/ParseCharListXmlCommand.as
+@@ -53,7 +53,7 @@ package kabam.rotmg.classes.control
+             skin = this.model.getCharacterSkin(cost.@type);
+             if(skin)
+             {
+-               skin.cost = int(cost);
++               skin.cost = int(cost) * CharacterSkin.FAME_MULTIPLIER;
+             }
+             else
+             {
+diff --git a/TK-Client/src/kabam/rotmg/classes/control/ParseSkinsXmlCommand.as b/TK-Client/src/kabam/rotmg/classes/control/ParseSkinsXmlCommand.as
+index a9a5bc8..a712806 100644
+--- a/TK-Client/src/kabam/rotmg/classes/control/ParseSkinsXmlCommand.as
++++ b/TK-Client/src/kabam/rotmg/classes/control/ParseSkinsXmlCommand.as
+@@ -39,7 +39,7 @@ import kabam.rotmg.assets.model.CharacterTemplate;
+          skin.id = xml.@type;
+          skin.name = xml.@id;
+          skin.unlockLevel = xml.UnlockLevel;
+-         skin.cost = xml.Cost || 300;
++         skin.cost = int(xml.Cost || 300) * CharacterSkin.FAME_MULTIPLIER;
+          skin.template = new CharacterTemplate(file,index);
+          var character:CharacterClass = this.model.getCharacterClass(xml.PlayerClassType);
+          character.skins.addSkin(skin);
+diff --git a/TK-Client/src/kabam/rotmg/classes/model/CharacterSkin.as b/TK-Client/src/kabam/rotmg/classes/model/CharacterSkin.as
+index 4d45e25..d0f8652 100644
+--- a/TK-Client/src/kabam/rotmg/classes/model/CharacterSkin.as
++++ b/TK-Client/src/kabam/rotmg/classes/model/CharacterSkin.as
+@@ -11,6 +11,10 @@ package kabam.rotmg.classes.model
+       public var name:String = "";
+       public var unlockLevel:int;
+       public var template:CharacterTemplate;
++      // ROMTG-Doom: skins cost fame, FAME_MULTIPLIER times their gold price (the server's
++      // Database.SkinFameMultiplier); gold is RotMG's real-money currency.
++      public static const FAME_MULTIPLIER:int = 5;
++
+       public var cost:int;
+       private var state:CharacterSkinState;
+       private var isSelected:Boolean;
+diff --git a/TK-Client/src/kabam/rotmg/classes/services/BuySkinTask.as b/TK-Client/src/kabam/rotmg/classes/services/BuySkinTask.as
+index 2bda83e..4438c6d 100644
+--- a/TK-Client/src/kabam/rotmg/classes/services/BuySkinTask.as
++++ b/TK-Client/src/kabam/rotmg/classes/services/BuySkinTask.as
+@@ -36,7 +36,7 @@ package kabam.rotmg.classes.services
+       override protected function startTask() : void
+       {
+          this.skin.setState(CharacterSkinState.PURCHASING);
+-         this.player.changeCredits(-this.skin.cost);
++         this.player.changeFame(-this.skin.cost);
+          this.client.complete.addOnce(this.onComplete);
+          this.client.sendRequest("account/purchaseSkin",this.makeCredentials());
+       }
+@@ -72,7 +72,7 @@ package kabam.rotmg.classes.services
+          var errorDialog:ErrorDialog = new ErrorDialog(problem);
+          this.openDialog.dispatch(errorDialog);
+          this.skin.setState(CharacterSkinState.PURCHASABLE);
+-         this.player.changeCredits(this.skin.cost);
++         this.player.changeFame(this.skin.cost);
+       }
+    }
+ }
+diff --git a/TK-Client/src/kabam/rotmg/classes/view/CharacterSkinListItem.as b/TK-Client/src/kabam/rotmg/classes/view/CharacterSkinListItem.as
+index 3fd104a..07a0a51 100644
+--- a/TK-Client/src/kabam/rotmg/classes/view/CharacterSkinListItem.as
++++ b/TK-Client/src/kabam/rotmg/classes/view/CharacterSkinListItem.as
+@@ -212,8 +212,8 @@ package kabam.rotmg.classes.view
+       
+       private function setCost() : void
+       {
+-         var cost:int = Boolean(this.model)?int(this.model.cost):int(300);
+-         this.buyButton.setPrice(cost, Currency.GOLD);
++         var cost:int = Boolean(this.model)?int(this.model.cost):int(300 * CharacterSkin.FAME_MULTIPLIER);
++         this.buyButton.setPrice(cost, Currency.FAME);
+          this.buyButton.setWidth(120);
+       }
+       
+diff --git a/TK-Client/src/kabam/rotmg/classes/view/CharacterSkinListItemFactory.as b/TK-Client/src/kabam/rotmg/classes/view/CharacterSkinListItemFactory.as
+index 0b45013..1bd7e0f 100644
+--- a/TK-Client/src/kabam/rotmg/classes/view/CharacterSkinListItemFactory.as
++++ b/TK-Client/src/kabam/rotmg/classes/view/CharacterSkinListItemFactory.as
+@@ -46,7 +46,7 @@ package kabam.rotmg.classes.view
+       
+       private function makeBuyButton() : LegacyBuyButton
+       {
+-         var button:LegacyBuyButton = new LegacyBuyButton("Buy for ",16,0,Currency.GOLD);
++         var button:LegacyBuyButton = new LegacyBuyButton("Buy for ",16,0,Currency.FAME);
+          button.setWidth(120);
+          return button;
+       }
+diff --git a/TK-Client/src/kabam/rotmg/game/view/NameChangerPanel.as b/TK-Client/src/kabam/rotmg/game/view/NameChangerPanel.as
+index 8a36281..76e0b5c 100644
+--- a/TK-Client/src/kabam/rotmg/game/view/NameChangerPanel.as
++++ b/TK-Client/src/kabam/rotmg/game/view/NameChangerPanel.as
+@@ -53,12 +53,12 @@ package kabam.rotmg.game.view
+             this.title_.htmlText = this.makeNameText(name);
+             this.title_.y = 0;
+             addChild(this.title_);
+-            buyButton = new LegacyBuyButton("Change ",16,Parameters.NAME_CHANGE_PRICE,Currency.GOLD);
+-            buyButton.addEventListener(MouseEvent.CLICK,this.onButtonClick);
+-            buyButton.x = WIDTH / 2 - buyButton.width / 2;
+-            buyButton.y = HEIGHT - buyButton.height / 2 - 17;
+-            addChild(buyButton);
+-            this.button_ = buyButton;
++            // ROMTG-Doom: name changes are free (RotMG charges gold, its real-money currency).
++            this.button_ = new TextButton(16,"Change");
++            this.button_.addEventListener(MouseEvent.CLICK,this.onButtonClick);
++            this.button_.x = WIDTH / 2 - this.button_.width / 2;
++            this.button_.y = HEIGHT - this.button_.height - 4;
++            addChild(this.button_);
+          }
+          else if(p.numStars_ < rankRequired)
+          {
+diff --git a/TK-Client/src/kabam/rotmg/messaging/impl/GameServerConnection.as b/TK-Client/src/kabam/rotmg/messaging/impl/GameServerConnection.as
+index fd6d85f..263354d 100644
+--- a/TK-Client/src/kabam/rotmg/messaging/impl/GameServerConnection.as
++++ b/TK-Client/src/kabam/rotmg/messaging/impl/GameServerConnection.as
+@@ -993,7 +993,7 @@ public class GameServerConnection
+          m.slotObjectId = objectId;
+          m.slotId = slotId;
+          m.slotObjectType = itemType;
+-         m.currency = 0;   // gold
++         m.currency = 1;   // fame (ROMTG-Doom: no gold, RotMG's real-money currency)
+          this.serverConnection.sendMessage(m);
+       }
+ 
+diff --git a/TK-Client/src/kabam/rotmg/ui/view/NotEnoughGoldDialog.as b/TK-Client/src/kabam/rotmg/ui/view/NotEnoughGoldDialog.as
+index 2df7290..d21d4e5 100644
+--- a/TK-Client/src/kabam/rotmg/ui/view/NotEnoughGoldDialog.as
++++ b/TK-Client/src/kabam/rotmg/ui/view/NotEnoughGoldDialog.as
+@@ -16,10 +16,10 @@ package kabam.rotmg.ui.view
+       
+       public var cancel:Signal;
+       
+-      public function NotEnoughGoldDialog(message:String = "")
++      public function NotEnoughGoldDialog(message:String = "", title:String = "")
+       {
+          var text:String = message == ""?TEXT:message;
+-         super(text,TITLE,CANCEL, null);
++         super(text,title == ""?TITLE:title,CANCEL, null);
+          this.cancel = new NativeMappedSignal(this,BUTTON1_EVENT);
+       }
+    }
+diff --git a/TK-Client/src/romtg/pets/PetsWindow.as b/TK-Client/src/romtg/pets/PetsWindow.as
+index 7b5c308..0a2287a 100644
+--- a/TK-Client/src/romtg/pets/PetsWindow.as
++++ b/TK-Client/src/romtg/pets/PetsWindow.as
+@@ -19,12 +19,15 @@ package romtg.pets
+    /**
+     * ROMTG-Doom: your pets, in the pet yard: every pet with its rarity and abilities, and what you
+     * can do with it: make it your active pet (it follows you out of the yard), feed it an item
+-    * from your inventory, fuse it with another pet of the same rarity, or release it. Prices are
+-    * the server's (NR-CORE's): gold.
++    * from your inventory, fuse it with another pet of the same rarity, or release it. Paid in
++    * fame, RotMG's fame prices (the server's PetHandlers; never gold, RotMG's real-money currency).
+     */
+    public class PetsWindow extends Sprite
+    {
+       private static const W:int = 560;
++      // Fame, by rarity (common, uncommon, rare, legendary, divine), as the server charges.
++      private static const FEED_FAME:Array = [10, 30, 100, 350, 1000];
++      private static const FUSE_FAME:Array = [300, 1000, 4000, 15000];
+       // A row: the name on top, the abilities under it, the buttons on a line of their own at
+       // the bottom right (they sat over the abilities, 2026-11-12).
+       private static const ROW:int = 80;
+@@ -168,11 +171,11 @@ package romtg.pets
+          }
+          if (this.mode_ == "feed")
+          {
+-            this.status_.text = "Feed " + this.picked_.displayName + ": pick an item from your inventory below (5 gold).";
++            this.status_.text = "Feed " + this.picked_.displayName + ": pick an item from your inventory below (" + fame(FEED_FAME, this.picked_.rarity) + " fame).";
+          }
+          else if (this.mode_ == "fuse")
+          {
+-            this.status_.text = "Fuse " + this.picked_.displayName + " with which " + this.picked_.rarityName + " pet?";
++            this.status_.text = "Fuse " + this.picked_.displayName + " with which " + this.picked_.rarityName + " pet? (" + fame(FUSE_FAME, this.picked_.rarity) + " fame)";
+          }
+          else
+          {
+@@ -295,6 +298,11 @@ package romtg.pets
+          this.rows_.addChild(cancel);
+       }
+ 
++      private static function fame(prices:Array, rarity:int) : String
++      {
++         return rarity >= 0 && rarity < prices.length ? String(prices[rarity]) : "?";
++      }
++
+       private function feeder(slot:int, type:int) : Function
+       {
+          return function(e:MouseEvent):void
+diff --git a/TK-Server/TKR.App/Controllers/AccountController.cs b/TK-Server/TKR.App/Controllers/AccountController.cs
+index d0a68b9..56c5262 100644
+--- a/TK-Server/TKR.App/Controllers/AccountController.cs
++++ b/TK-Server/TKR.App/Controllers/AccountController.cs
+@@ -36,7 +36,7 @@ namespace TKR.App.Controllers
+                 var skinDesc = _core.Resources.GameData.Skins[type];
+                 var classStats = _core.Database.ReadClassStats(acc);
+ 
+-                if (skinDesc.UnlockLevel > classStats[skinDesc.PlayerClassType].BestLevel || skinDesc.Cost > acc.Credits)
++                if (skinDesc.UnlockLevel > classStats[skinDesc.PlayerClassType].BestLevel || skinDesc.Cost * TKR.Shared.database.Database.SkinFameMultiplier > acc.Fame)
+                 {
+                     Response.CreateError("Failed to purchase skin");
+                     return;
+diff --git a/TK-Server/TKR.Shared/database/Database.cs b/TK-Server/TKR.Shared/database/Database.cs
+index eeda0a4..01e3826 100644
+--- a/TK-Server/TKR.Shared/database/Database.cs
++++ b/TK-Server/TKR.Shared/database/Database.cs
+@@ -776,12 +776,14 @@ namespace TKR.Shared.database
+ 
+         public void Mute(string ip, TimeSpan? timeSpan = null) => _db.StringSetAsync($"mutes:{ip}", "", timeSpan);
+ 
++        /// <summary>ROMTG-Doom: skins cost fame, not gold (gold is RotMG's real-money currency):
++        /// SkinFameMultiplier times their gold price.</summary>
++        public const int SkinFameMultiplier = 5;
++
+         public void PurchaseSkin(DbAccount acc, ushort skinType, int cost)
+         {
+             if (cost > 0)
+-                acc.TotalCredits = (int)_db.HashIncrement(acc.Key, "totalCredits", cost);
+-
+-            acc.Credits = (int)_db.HashIncrement(acc.Key, "credits", -cost);
++                acc.Fame = (int)_db.HashIncrement(acc.Key, "fame", -cost * SkinFameMultiplier);
+ 
+             // not thread safe
+             var ownedSkins = acc.Skins.ToList();
+diff --git a/TK-Server/TKR.WorldServer/core/net/handlers/ChooseNameHandler.cs b/TK-Server/TKR.WorldServer/core/net/handlers/ChooseNameHandler.cs
+index f3c74b4..efcee6a 100644
+--- a/TK-Server/TKR.WorldServer/core/net/handlers/ChooseNameHandler.cs
++++ b/TK-Server/TKR.WorldServer/core/net/handlers/ChooseNameHandler.cs
+@@ -53,17 +53,8 @@ namespace TKR.WorldServer.core.net.handlers
+                         return;
+                     }
+ 
+-                    if (client.Account.NameChosen && client.Account.Credits < 100)
+-                        client.SendPacket(new NameResult()
+-                        {
+-                            Success = false,
+-                            ErrorText = "Not enough gold"
+-                        });
+-                    else
++                    // ROMTG-Doom: name changes are free (RotMG charges gold, its real-money currency).
+                     {
+-                        // remove fame is purchasing name change
+-                        if (client.Account.NameChosen)
+-                            client.GameServer.Database.UpdateCredit(client.Account, -100);
+ 
+                         // rename
+                         var oldName = client.Account.Name;
+diff --git a/TK-Server/TKR.WorldServer/core/net/handlers/pets/PetHandlers.cs b/TK-Server/TKR.WorldServer/core/net/handlers/pets/PetHandlers.cs
+index 283cbb9..230d7ed 100644
+--- a/TK-Server/TKR.WorldServer/core/net/handlers/pets/PetHandlers.cs
++++ b/TK-Server/TKR.WorldServer/core/net/handlers/pets/PetHandlers.cs
+@@ -51,6 +51,8 @@ namespace TKR.WorldServer.core.net.handlers.pets
+ 
+             if (client.Player == null || client.Player.World == null)
+                 return;
++            // ROMTG-Doom: always fame, RotMG's fame prices; gold is RotMG's real-money currency.
++            currency = CurrencyType.Fame;
+             if (currency != CurrencyType.Fame && currency != CurrencyType.Gold)
+             {
+                 client.Player.SendError("Unsupported currency type.");
+diff --git a/TK-Server/TKR.WorldServer/core/objects/vendors/MerchantLists.cs b/TK-Server/TKR.WorldServer/core/objects/vendors/MerchantLists.cs
+index cd0035e..142422b 100644
+--- a/TK-Server/TKR.WorldServer/core/objects/vendors/MerchantLists.cs
++++ b/TK-Server/TKR.WorldServer/core/objects/vendors/MerchantLists.cs
+@@ -103,12 +103,15 @@ namespace TKR.WorldServer.core.objects.vendors
+ 
+         private static readonly List<ISellableItem> Special = new List<ISellableItem>
+         {
+-            new ShopItem("Glowing Talisman", 100),
+-            new ShopItem("XP Booster 20 min", 25),
+-            new ShopItem("Loot Drop Potion", 100),
+-            new ShopItem("Backpack", 100),
+-            new ShopItem("Char Slot Unlocker", 300),
+-            new ShopItem("Vault Chest Unlocker", 200)
++            // ROMTG-Doom: fame, not gold (gold is real money in RotMG; on a local server there's
++            // none to earn): about 10x the gold price, the unlockers at what the account screen
++            // charges in fame (SlotCost, VaultChestPrice).
++            new ShopItem("Glowing Talisman", 1000),
++            new ShopItem("XP Booster 20 min", 250),
++            new ShopItem("Loot Drop Potion", 1000),
++            new ShopItem("Backpack", 1000),
++            new ShopItem("Char Slot Unlocker", 1250),
++            new ShopItem("Vault Chest Unlocker", 300)
+         };
+ 
+         public static void Initialize(GameServer gameServer)
+@@ -134,8 +137,9 @@ namespace TKR.WorldServer.core.objects.vendors
+         {
+             { TileRegion.Store_1, new Tuple<List<ISellableItem>, CurrencyType, int>(PurchasableFame, CurrencyType.Fame, 0) },
+             { TileRegion.Store_2, new Tuple<List<ISellableItem>, CurrencyType, int>(Consumables, CurrencyType.Fame, 0) },
+-            { TileRegion.Store_3, new Tuple<List<ISellableItem>, CurrencyType, int>(Special, CurrencyType.Gold, 0) },
+-            { TileRegion.Store_4, new Tuple<List<ISellableItem>, CurrencyType, int>(KeysGold, CurrencyType.Gold, 0) },
++            { TileRegion.Store_3, new Tuple<List<ISellableItem>, CurrencyType, int>(Special, CurrencyType.Fame, 0) },
++            // ROMTG-Doom: no gold key shop; the same keys are in the fame key shop (Store_11).
++            { TileRegion.Store_4, new Tuple<List<ISellableItem>, CurrencyType, int>(new List<ISellableItem>(), CurrencyType.Fame, 0) },
+             { TileRegion.Store_11, new Tuple<List<ISellableItem>, CurrencyType, int>(KeysFame, CurrencyType.Fame, 0) }
+         };
+ 
+@@ -187,7 +191,8 @@ namespace TKR.WorldServer.core.objects.vendors
+             }
+ 
+             Shops[TileRegion.Store_5] = new Tuple<List<ISellableItem>, CurrencyType, int>(petGenerators, CurrencyType.Fame, 0);
+-            Shops[TileRegion.Store_10] = new Tuple<List<ISellableItem>, CurrencyType, int>(supporterPetGenerators, CurrencyType.Gold, 0);
++            // ROMTG-Doom: no supporter (donor) shop.
++            Shops[TileRegion.Store_10] = new Tuple<List<ISellableItem>, CurrencyType, int>(new List<ISellableItem>(), CurrencyType.Fame, 0);
+ 
+             Shops[TileRegion.Store_6] = new Tuple<List<ISellableItem>, CurrencyType, int>(d1, CurrencyType.Fame, 0);
+             Shops[TileRegion.Store_7] = new Tuple<List<ISellableItem>, CurrencyType, int>(d2, CurrencyType.Fame, 0);

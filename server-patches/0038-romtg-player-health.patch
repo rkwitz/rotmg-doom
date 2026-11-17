@@ -1,0 +1,14 @@
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index 6b62f8d..dcafef8 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -549,7 +549,8 @@ package romtg
+       /** " HP MAX" for an enemy, "" for anything else. */
+       private static function health(go:GameObject) : String
+       {
+-         return go.props_ != null && go.props_.isEnemy_ ? " " + go.hp_ + " " + go.maxHP_ : "";
++         // Enemies, and other players too (Ryan, 2026-11-15): a health bar at their feet in Doom.
++         return go.props_ != null && (go.props_.isEnemy_ || go is Player) && go.maxHP_ > 0 ? " " + go.hp_ + " " + go.maxHP_ : "";
+       }
+ 
+       public static function chat(name:String, to:String, text:String, nameColor:int, textColor:int) : void

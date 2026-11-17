@@ -1,0 +1,55 @@
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index 4cd1047..819fdeb 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -13,6 +13,7 @@ package romtg
+    import flash.geom.Point;
+    import com.company.assembleegameclient.ui.menu.Menu;
+    import com.company.assembleegameclient.ui.options.Options;
++   import romtg.pets.PetsWindow;
+    import io.decagames.rotmg.ui.popups.PopupView;
+    import kabam.rotmg.dialogs.view.DialogsView;
+    import flash.geom.Rectangle;
+@@ -243,7 +244,13 @@ package romtg
+       {
+          var layer:DisplayObject = null;
+          var dlg:DisplayObject = null;
+-         if (PopupView.instance != null && PopupView.instance.openView() != null)
++         if (PetsWindow.current != null && PetsWindow.current.stage != null)
++         {
++            // The pets window (romtg/pets) is a window of our own, not a RotMG dialog: treated as one.
++            layer = PetsWindow.current;
++            dlg = PetsWindow.current;
++         }
++         else if (PopupView.instance != null && PopupView.instance.openView() != null)
+          {
+             layer = PopupView.instance;
+             dlg = PopupView.instance.openView();
+diff --git a/TK-Client/src/romtg/pets/PetsWindow.as b/TK-Client/src/romtg/pets/PetsWindow.as
+index 0a2287a..95b2cd8 100644
+--- a/TK-Client/src/romtg/pets/PetsWindow.as
++++ b/TK-Client/src/romtg/pets/PetsWindow.as
+@@ -32,7 +32,7 @@ package romtg.pets
+       // the bottom right (they sat over the abilities, 2026-11-12).
+       private static const ROW:int = 80;
+       private static const MAX_ROWS:int = 6;
+-      private static var current:PetsWindow;
++      public static var current:PetsWindow;   // (DoomLink treats it as a dialog over Doom)
+ 
+       private var gs_:GameSprite;
+       private var rows_:Sprite = new Sprite();
+@@ -61,8 +61,12 @@ package romtg.pets
+          {
+             return;
+          }
+-         var tl:Point = parent.globalToLocal(new Point(0, 0));
+-         var br:Point = parent.globalToLocal(new Point(stage.stageWidth, stage.stageHeight));
++         // TK's stage has RotMG's 800x600 area in the middle of the window: the window's corner
++         // is at (-(W-800)/2, -(H-600)/2) on it (DoomLink.inRotmgUnits). From (0, 0) the
++         // window ran mostly off the screen (Ryan, 2026-11-15).
++         var left:Number = -(stage.stageWidth - 800) / 2, top:Number = -(stage.stageHeight - 600) / 2;
++         var tl:Point = parent.globalToLocal(new Point(left, top));
++         var br:Point = parent.globalToLocal(new Point(left + stage.stageWidth, top + stage.stageHeight));
+          var areaW:Number = (br.x - tl.x) * 0.75;   // the play area: the left 600 of RotMG's 800
+          var areaH:Number = br.y - tl.y;
+          var h:Number = 60 + ROW * MAX_ROWS + 50;

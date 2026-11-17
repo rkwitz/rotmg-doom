@@ -1,0 +1,91 @@
+diff --git a/TK-Client/src/io/decagames/rotmg/ui/popups/PopupView.as b/TK-Client/src/io/decagames/rotmg/ui/popups/PopupView.as
+index a55bff0..928e26b 100644
+--- a/TK-Client/src/io/decagames/rotmg/ui/popups/PopupView.as
++++ b/TK-Client/src/io/decagames/rotmg/ui/popups/PopupView.as
+@@ -15,9 +15,18 @@ package io.decagames.rotmg.ui.popups
+       
+       protected var popupFadeAlpha:Number = 0.6;
+       
++      // ROMTG-Doom: the one in the game, for romtg.DoomLink to see whether a popup is open.
++      public static var instance:PopupView;
++
++      public function isOpen() : Boolean
++      {
++         return this.popupContainer.numChildren > 0;
++      }
++
+       public function PopupView()
+       {
+          super();
++         instance = this;
+          this.popupContainer = new Sprite();
+          this.fadeContainer = new Sprite();
+          super.addChild(this.popupContainer);
+diff --git a/TK-Client/src/kabam/rotmg/dialogs/view/DialogsView.as b/TK-Client/src/kabam/rotmg/dialogs/view/DialogsView.as
+index 5f5c79e..34ddfe1 100644
+--- a/TK-Client/src/kabam/rotmg/dialogs/view/DialogsView.as
++++ b/TK-Client/src/kabam/rotmg/dialogs/view/DialogsView.as
+@@ -11,8 +11,16 @@ public class DialogsView extends Sprite {
+     private var container:DisplayObjectContainer;
+     private var current:Sprite;
+     private var pushed:DisplayObject;
++    // ROMTG-Doom: the one in the game, for romtg.DoomLink to see whether a dialog is open.
++    public static var instance:DialogsView;
++
++    /** A dialog (the potion storage, the vault's...) is showing. */
++    public function isOpen():Boolean {
++        return (this.current != null && this.container.contains(this.current)) || (this.pushed != null && contains(this.pushed));
++    }
+ 
+     public function DialogsView() {
++        instance = this;
+         addChild((this.background = new Sprite()));
+         addChild((this.container = new Sprite()));
+         this.background.visible = false;
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index 1ce38db..c3187d4 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -11,6 +11,8 @@ package romtg
+    import flash.display.DisplayObject;
+    import flash.events.Event;
+    import flash.geom.Point;
++   import io.decagames.rotmg.ui.popups.PopupView;
++   import kabam.rotmg.dialogs.view.DialogsView;
+    import flash.geom.Rectangle;
+    import flash.events.IOErrorEvent;
+    import flash.events.KeyboardEvent;
+@@ -43,6 +45,8 @@ package romtg
+     *   quest ID X Y HP MAX NAME | quest -1   the quest (boss) RotMG points you to, or none
+     *   cash CREDITS FAME     your gold and fame
+     *   tip X Y W H | tip -   a tooltip is showing at X Y W H (RotMG stage units), or none
++    *   modal 1|0             a dialog or popup (potion storage...) opened in RotMG's play area, or
++    *                         closed: the swapper shows all of RotMG over Doom meanwhile
+     *   view X Y R            RotMG's circle of ground round you: its middle and radius (800x600 units)
+     *   st COLOR TEXT         a status text over you (XP gained, level up, quest complete...)
+     *   chat NC TC NAME<tab>TO<tab>TEXT       a chat line (NC/TC: name and text colours)
+@@ -91,6 +95,7 @@ package romtg
+       // 15: the circle's edge is ragged, whole tiles.
+       private static const VIEW_TILES:Number = 14.5;
+       private static var viewSent:String = "";
++      private static var modalSent:int = -1;
+       private static var posAt:int = 0;
+       private static var objectsAt:int = 0;
+       private static var projectilesAt:int = 0;
+@@ -311,6 +316,16 @@ package romtg
+             hudAt = now;
+             hud(player, now);
+             sendView(player);
++            // A dialog or popup opens in the play area, which Doom covers: the swapper shows
++            // RotMG over Doom while one is open (the potion storage showed only in the corner
++            // view, 2026-11-15).
++            var modal:int = (DialogsView.instance != null && DialogsView.instance.isOpen())
++               || (PopupView.instance != null && PopupView.instance.isOpen()) ? 1 : 0;
++            if (modal != modalSent)
++            {
++               modalSent = modal;
++               send("modal " + modal);
++            }
+          }
+          if (viewing)
+          {

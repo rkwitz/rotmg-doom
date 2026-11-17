@@ -1,0 +1,92 @@
+diff --git a/TK-Client/src/com/company/assembleegameclient/ui/panels/itemgrids/itemtiles/InteractiveItemTile.as b/TK-Client/src/com/company/assembleegameclient/ui/panels/itemgrids/itemtiles/InteractiveItemTile.as
+index bb43b23..0d4d118 100644
+--- a/TK-Client/src/com/company/assembleegameclient/ui/panels/itemgrids/itemtiles/InteractiveItemTile.as
++++ b/TK-Client/src/com/company/assembleegameclient/ui/panels/itemgrids/itemtiles/InteractiveItemTile.as
+@@ -26,6 +26,30 @@ package com.company.assembleegameclient.ui.panels.itemgrids.itemtiles
+       // ROMTG-Doom: an item is being dragged (romtg.DoomLink `drag`: over Doom, RotMG's ground
+       // shows meanwhile so the item can be dropped on it).
+       public static var draggingNow:Boolean = false;
++      // ROMTG-Doom: the tile being dragged, and the drop it ends in made "on the ground" (let go
++      // over Doom, where RotMG never sees the mouse: doomDrop).
++      public static var dragged:InteractiveItemTile = null;
++      public static var dropOnGround:Boolean = false;
++
++      /** ROMTG-Doom: the item being dragged let go over Doom (romtg.DoomLink `dragdrop`): dropped
++       *  on the ground, as letting go over RotMG's own does. */
++      public static function doomDrop() : void
++      {
++         var tile:InteractiveItemTile = dragged;
++         if (tile == null || !tile.isDragging)
++         {
++            return;
++         }
++         dropOnGround = true;
++         try
++         {
++            tile.endDrag(null);
++         }
++         finally
++         {
++            dropOnGround = false;
++         }
++      }
+       
+       public function InteractiveItemTile(id:int, parentGrid:ItemGrid, isInteractive:Boolean)
+       {
+@@ -155,6 +179,7 @@ package com.company.assembleegameclient.ui.panels.itemgrids.itemtiles
+       {
+          this.isDragging = true;
+          draggingNow = true;
++         dragged = this;
+          stage.addChild(itemSprite);
+          toggleDragState(false);
+          itemSprite.startDrag(true);
+@@ -168,6 +193,7 @@ package com.company.assembleegameclient.ui.panels.itemgrids.itemtiles
+       {
+          this.isDragging = false;
+          draggingNow = false;
++         dragged = null;
+          toggleDragState(true);
+          itemSprite.stopDrag();
+          itemSprite.removeEventListener(MouseEvent.MOUSE_UP,this.endDrag);
+diff --git a/TK-Client/src/com/company/assembleegameclient/ui/panels/mediators/ItemGridMediator.as b/TK-Client/src/com/company/assembleegameclient/ui/panels/mediators/ItemGridMediator.as
+index d30512a..bd1f546 100644
+--- a/TK-Client/src/com/company/assembleegameclient/ui/panels/mediators/ItemGridMediator.as
++++ b/TK-Client/src/com/company/assembleegameclient/ui/panels/mediators/ItemGridMediator.as
+@@ -85,7 +85,11 @@ public class ItemGridMediator extends Mediator
+             return;
+          }
+          var target:* = DisplayHierarchy.getParentWithTypeArray(sourceTile.getDropTarget(),TabStripView,InteractiveItemTile,Map);
+-         if(target is InteractiveItemTile)
++         if(InteractiveItemTile.dropOnGround)
++         {
++            this.dropItem(sourceTile);   // ROMTG-Doom: let go over Doom (InteractiveItemTile.doomDrop)
++         }
++         else if(target is InteractiveItemTile)
+          {
+             targetTile = target as InteractiveItemTile;
+             if(canSwapItems(sourceTile,targetTile))
+@@ -118,7 +122,7 @@ public class ItemGridMediator extends Mediator
+       {
+          var sourceTile:InteractiveItemTile = e.tile;
+          var target:* = DisplayHierarchy.getParentWithTypeArray(sourceTile.getDropTarget(),TabStripView,Map);
+-         if(target is Map)
++         if(target is Map || InteractiveItemTile.dropOnGround)
+          {
+             this.dropItem(sourceTile);
+          }
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index 71fce18..399984b 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -1122,6 +1122,10 @@ package romtg
+                WebMain.STAGE.frameRate = viewing ? Math.max(DOOM_FPS, Parameters.data_.fps) : Parameters.data_.fps;
+             }
+          }
++         else if (parts[0] == "dragdrop")
++         {
++            InteractiveItemTile.doomDrop();   // an item let go over Doom: on the ground
++         }
+          else if (parts[0] == "dlgcx" && parts.length >= 2)
+          {
+             dialogCentre = Number(parts[1]);   // the middle of Doom's view, in units (dialogLine)

@@ -1,0 +1,19 @@
+// RotMG's status effects on what you see (romtg_handler.zs StatusShaders), as RotMG's client
+// filters its map (Map.as): Blind its BLIND_FILTER, Drunk a BlurFilter of 20 +- 10 pixels,
+// Paused grey (Renderer's pause filter). Only the 3D view: Doom's HUD stays clear, as RotMG's.
+HardwareShader PostProcess scene
+{
+	Name "RomtgBlind"
+	Shader "shaders/romtg_blind.fp" 330
+}
+HardwareShader PostProcess scene
+{
+	Name "RomtgDrunk"
+	Shader "shaders/romtg_drunk.fp" 330
+	Uniform float radius
+}
+HardwareShader PostProcess scene
+{
+	Name "RomtgPause"
+	Shader "shaders/romtg_pause.fp" 330
+}

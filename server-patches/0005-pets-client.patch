@@ -1,0 +1,1185 @@
+diff --git a/TK-Client/src/com/company/assembleegameclient/objects/ObjectLibrary.as b/TK-Client/src/com/company/assembleegameclient/objects/ObjectLibrary.as
+index 17f5aa4..6eae58b 100644
+--- a/TK-Client/src/com/company/assembleegameclient/objects/ObjectLibrary.as
++++ b/TK-Client/src/com/company/assembleegameclient/objects/ObjectLibrary.as
+@@ -9,6 +9,8 @@ import com.company.util.AssetLibrary;
+    import flash.display.BitmapData;
+    import flash.utils.Dictionary;
+    import flash.utils.getDefinitionByName;
++   import romtg.pets.PetUpgraderObject;
++   import romtg.pets.RomtgPet;
+    import kabam.rotmg.constants.GeneralConstants;
+    import kabam.rotmg.constants.ItemConstants;
+    import kabam.rotmg.messaging.impl.data.StatData;
+@@ -32,6 +34,9 @@ public class ObjectLibrary
+       public static const TYPE_MAP:Object = {
+          "SpecialClosedVaultChest":SpecialClosedVaultChest,
+          "CaveWall":CaveWall,
++         "Pet":RomtgPet,                     // ROMTG-Doom pets
++         "PetUpgrader":PetUpgraderObject,
++         "YardUpgrader":GameObject,
+          "Character":Character,
+          "CharacterChanger":CharacterChanger,
+          "ClosedVaultChest":ClosedVaultChest,
+diff --git a/TK-Client/src/com/company/assembleegameclient/util/AssetLoader.as b/TK-Client/src/com/company/assembleegameclient/util/AssetLoader.as
+index b787d50..7450e7e 100644
+--- a/TK-Client/src/com/company/assembleegameclient/util/AssetLoader.as
++++ b/TK-Client/src/com/company/assembleegameclient/util/AssetLoader.as
+@@ -15,6 +15,10 @@ import kabam.rotmg.Emojis.Emotes;
+ import kabam.rotmg.assets.BossBar;
+ import kabam.rotmg.assets.EmbeddedAssets;
+ import kabam.rotmg.assets.EmbeddedData;
++import kabam.rotmg.assets.EmbeddedData_RomtgPetsCXML;
++import kabam.rotmg.assets.EmbeddedAssets_romtg_chars8x8rPets2;
++import kabam.rotmg.assets.EmbeddedAssets_romtg_romtgPets1;
++import kabam.rotmg.assets.EmbeddedAssets_romtg_petsDivine;
+ 
+ public class AssetLoader
+ {
+@@ -150,6 +154,20 @@ public class AssetLoader
+       AnimatedChars.add("players", new EmbeddedAssets.playersEmbed_().bitmapData, new EmbeddedAssets.playersMaskEmbed_().bitmapData, 8, 8, 56, 24, AnimatedChar.RIGHT);
+       AnimatedChars.add("playerskins", new EmbeddedAssets.playersSkinsEmbed_().bitmapData, new EmbeddedAssets.playersSkinsMaskEmbed_().bitmapData, 8, 8, 56, 24, AnimatedChar.RIGHT);
+       AnimatedChars.add("chars8x8rPets1", new EmbeddedAssets.chars8x8rPets1Embed_().bitmapData, new EmbeddedAssets.chars8x8rPets1MaskEmbed_().bitmapData, 8, 8, 56, 8, AnimatedChar.RIGHT);
++      // ROMTG-Doom pets: RotMG's other pet sheets (copied from the NR client by scripts/pets.py)
++      // No mask for Pets2: Pets1's mask is shorter (576 vs 840 px) and ran off its end at start-up.
++      // Guarded, so a pet sheet can never stop the game from starting.
++      try
++      {
++         // RotMG's own chars8x8rPets1 (TK's is shorter): no mask, as RotMG's mask is shorter too.
++         AnimatedChars.add("romtgPets1", new EmbeddedAssets_romtg_romtgPets1().bitmapData, null, 8, 8, 56, 8, AnimatedChar.RIGHT);
++         AnimatedChars.add("chars8x8rPets2", new EmbeddedAssets_romtg_chars8x8rPets2().bitmapData, null, 8, 8, 56, 8, AnimatedChar.RIGHT);
++         AnimatedChars.add("petsDivine", new EmbeddedAssets_romtg_petsDivine().bitmapData, null, 16, 16, 112, 16, AnimatedChar.RIGHT);
++      }
++      catch (e:Error)
++      {
++         trace("ROMTG-Doom pets: a pet sprite sheet failed to load: " + e);
++      }
+       AnimatedChars.add("playerskins16", new EmbeddedAssets.playersSkins16Embed_().bitmapData, new EmbeddedAssets.playersSkins16MaskEmbed_().bitmapData, 16, 16, 112, 48, AnimatedChar.RIGHT);
+       AnimatedChars.add("d1chars16x16r", new EmbeddedAssets.d1Chars16x16rEmbed_().bitmapData, null, 16, 16, 112, 16, AnimatedChar.RIGHT);
+       AnimatedChars.add("mountainTempleChars8x8", new EmbeddedAssets.mountainTempleChars8x8Embed_().bitmapData, null, 8, 8, 56, 8, AnimatedChar.RIGHT);
+@@ -204,6 +222,9 @@ public class AssetLoader
+          ObjectLibrary.parseFromXML(xml);
+          xml = XML(new EmbeddedData.PlayersCXML());
+          ObjectLibrary.parseFromXML(xml);
++         // ROMTG-Doom pets: RotMG's pet data, moved to free types (scripts/pets.py)
++         xml = XML(new EmbeddedData_RomtgPetsCXML());
++         ObjectLibrary.parseFromXML(xml);
+       }
+       catch(error:*)
+       {
+diff --git a/TK-Client/src/kabam/rotmg/assets/EmbeddedAssets_romtg_chars8x8rPets2.as b/TK-Client/src/kabam/rotmg/assets/EmbeddedAssets_romtg_chars8x8rPets2.as
+new file mode 100644
+index 0000000..54eb79d
+--- /dev/null
++++ b/TK-Client/src/kabam/rotmg/assets/EmbeddedAssets_romtg_chars8x8rPets2.as
+@@ -0,0 +1,11 @@
++package kabam.rotmg.assets {
++import mx.core.*;
++
++// ROMTG-Doom pets: a RotMG pet sheet, copied from the NR client by rotmg-doom/scripts/pets.py.
++[Embed(source="EmbeddedAssets_romtg_chars8x8rPets2.png")]
++public class EmbeddedAssets_romtg_chars8x8rPets2 extends BitmapAsset {
++   public function EmbeddedAssets_romtg_chars8x8rPets2() {
++      super();
++   }
++}
++}
+diff --git a/TK-Client/src/kabam/rotmg/assets/EmbeddedAssets_romtg_petsDivine.as b/TK-Client/src/kabam/rotmg/assets/EmbeddedAssets_romtg_petsDivine.as
+new file mode 100644
+index 0000000..0685ecd
+--- /dev/null
++++ b/TK-Client/src/kabam/rotmg/assets/EmbeddedAssets_romtg_petsDivine.as
+@@ -0,0 +1,11 @@
++package kabam.rotmg.assets {
++import mx.core.*;
++
++// ROMTG-Doom pets: a RotMG pet sheet, copied from the NR client by rotmg-doom/scripts/pets.py.
++[Embed(source="EmbeddedAssets_romtg_petsDivine.png")]
++public class EmbeddedAssets_romtg_petsDivine extends BitmapAsset {
++   public function EmbeddedAssets_romtg_petsDivine() {
++      super();
++   }
++}
++}
+diff --git a/TK-Client/src/kabam/rotmg/assets/EmbeddedAssets_romtg_romtgPets1.as b/TK-Client/src/kabam/rotmg/assets/EmbeddedAssets_romtg_romtgPets1.as
+new file mode 100644
+index 0000000..19f0c54
+--- /dev/null
++++ b/TK-Client/src/kabam/rotmg/assets/EmbeddedAssets_romtg_romtgPets1.as
+@@ -0,0 +1,11 @@
++package kabam.rotmg.assets {
++import mx.core.*;
++
++// ROMTG-Doom pets: a RotMG pet sheet, copied from the NR client by rotmg-doom/scripts/pets.py.
++[Embed(source="EmbeddedAssets_romtg_romtgPets1.png")]
++public class EmbeddedAssets_romtg_romtgPets1 extends BitmapAsset {
++   public function EmbeddedAssets_romtg_romtgPets1() {
++      super();
++   }
++}
++}
+diff --git a/TK-Client/src/kabam/rotmg/assets/EmbeddedData_RomtgPetsCXML.as b/TK-Client/src/kabam/rotmg/assets/EmbeddedData_RomtgPetsCXML.as
+new file mode 100644
+index 0000000..1013142
+--- /dev/null
++++ b/TK-Client/src/kabam/rotmg/assets/EmbeddedData_RomtgPetsCXML.as
+@@ -0,0 +1,11 @@
++package kabam.rotmg.assets {
++import mx.core.*;
++
++// ROMTG-Doom pets: RotMG's pet data, generated by rotmg-doom/scripts/pets.py (not in the repo).
++[Embed(source="EmbeddedData_RomtgPetsCXML.xml", mimeType="application/octet-stream")]
++public class EmbeddedData_RomtgPetsCXML extends ByteArrayAsset {
++   public function EmbeddedData_RomtgPetsCXML() {
++      super();
++   }
++}
++}
+diff --git a/TK-Client/src/kabam/rotmg/messaging/impl/GameServerConnection.as b/TK-Client/src/kabam/rotmg/messaging/impl/GameServerConnection.as
+index 1701106..fd6d85f 100644
+--- a/TK-Client/src/kabam/rotmg/messaging/impl/GameServerConnection.as
++++ b/TK-Client/src/kabam/rotmg/messaging/impl/GameServerConnection.as
+@@ -179,6 +179,14 @@ import kabam.rotmg.messaging.impl.outgoing.Teleport;
+ import kabam.rotmg.messaging.impl.outgoing.UpgradeStat;
+ import kabam.rotmg.messaging.impl.outgoing.UseItem;
+ import kabam.rotmg.messaging.impl.outgoing.UsePortal;
++
++import romtg.pets.ActivePetUpdateRequestMessage;
++import romtg.pets.EvolvePetMessage;
++import romtg.pets.HatchPetMessage;
++import romtg.pets.PetIntMessage;
++import romtg.pets.PetUpgradeRequestMessage;
++import romtg.pets.RomtgPet;
++import romtg.pets.RomtgPetCommands;
+ import kabam.rotmg.messaging.impl.outgoing.UsePotion;
+ import kabam.rotmg.messaging.impl.outgoing.bounty.BountyMemberListRequest;
+ import kabam.rotmg.messaging.impl.outgoing.bounty.BountyRequest;
+@@ -323,6 +331,15 @@ public class GameServerConnection
+       public static const USEPOTION:int = 94;
+ 
+       public static const ENGINE_FUEL_ACTION:int = 102;
++      // ROMTG-Doom pets (the server's MessageIds, ported from NR-CORE)
++      public static const PET_UPGRADE_REQUEST:int = 103;
++      public static const ACTIVE_PET_UPDATE_REQUEST:int = 104;
++      public static const ACTIVE_PET_UPDATE:int = 105;
++      public static const NEW_ABILITY:int = 106;
++      public static const PET_YARD_UPDATE:int = 107;
++      public static const EVOLVE_PET:int = 108;
++      public static const DELETE_PET:int = 109;
++      public static const HATCH_PET:int = 110;
+ 
+       private static const TO_MILLISECONDS:int = 1000;
+ 
+@@ -473,6 +490,14 @@ public class GameServerConnection
+          messages.map(UPGRADESTAT).toMessage(UpgradeStat);
+          messages.map(FORGEFUSION).toMessage(ForgeFusion);
+          messages.map(ENGINE_FUEL_ACTION).toMessage(FuelEngineAction);
++         messages.map(PET_UPGRADE_REQUEST).toMessage(PetUpgradeRequestMessage);
++         messages.map(ACTIVE_PET_UPDATE_REQUEST).toMessage(ActivePetUpdateRequestMessage);
++         messages.map(ACTIVE_PET_UPDATE).toMessage(PetIntMessage).toMethod(this.onActivePetUpdate);
++         messages.map(NEW_ABILITY).toMessage(PetIntMessage).toMethod(this.onNewPetAbility);
++         messages.map(PET_YARD_UPDATE).toMessage(PetIntMessage).toMethod(this.onPetYardUpdate);
++         messages.map(EVOLVE_PET).toMessage(EvolvePetMessage).toMethod(this.onEvolvePet);
++         messages.map(DELETE_PET).toMessage(PetIntMessage).toMethod(this.onDeletePet);
++         messages.map(HATCH_PET).toMessage(HatchPetMessage).toMethod(this.onHatchPet);
+          messages.map(ESCAPE).toMessage(Escape);
+ 
+          /* Bounty */
+@@ -610,6 +635,14 @@ public class GameServerConnection
+          messages.unmap(UPGRADESTAT);
+          messages.unmap(FORGEFUSION);
+          messages.unmap(ENGINE_FUEL_ACTION);
++         messages.unmap(PET_UPGRADE_REQUEST);
++         messages.unmap(ACTIVE_PET_UPDATE_REQUEST);
++         messages.unmap(ACTIVE_PET_UPDATE);
++         messages.unmap(NEW_ABILITY);
++         messages.unmap(PET_YARD_UPDATE);
++         messages.unmap(EVOLVE_PET);
++         messages.unmap(DELETE_PET);
++         messages.unmap(HATCH_PET);
+          messages.unmap(ESCAPE);
+          messages.unmap(AOEACK);
+          messages.unmap(SHOOTACK);
+@@ -940,6 +973,69 @@ public class GameServerConnection
+          this.serverConnection.sendMessage(teleport);
+       }
+ 
++      // ---- ROMTG-Doom pets ------------------------------------------------------------------
++
++      public function romtgPetCommand(command:int, petId:int) : void
++      {
++         var m:ActivePetUpdateRequestMessage = this.messages.require(ACTIVE_PET_UPDATE_REQUEST) as ActivePetUpdateRequestMessage;
++         m.command = command;
++         m.petId = petId;
++         this.serverConnection.sendMessage(m);
++      }
++
++      public function romtgPetUpgrade(transType:int, petId1:int, petId2:int, objectId:int, slotId:int, itemType:int) : void
++      {
++         var m:PetUpgradeRequestMessage = this.messages.require(PET_UPGRADE_REQUEST) as PetUpgradeRequestMessage;
++         m.transType = transType;
++         m.petId1 = petId1;
++         m.petId2 = petId2;
++         m.objectId = objectId;
++         m.slotObjectId = objectId;
++         m.slotId = slotId;
++         m.slotObjectType = itemType;
++         m.currency = 0;   // gold
++         this.serverConnection.sendMessage(m);
++      }
++
++      private function petInfo(text:String) : void
++      {
++         this.addTextLine.dispatch(new AddTextLineVO(Parameters.CLIENT_CHAT_NAME, text));
++      }
++
++      private function onActivePetUpdate(m:PetIntMessage) : void
++      {
++         RomtgPetCommands.activePetId = m.value;
++         this.petInfo(m.value > 0 ? "That pet now follows you." : "No pet follows you now.");
++      }
++
++      private function onNewPetAbility(m:PetIntMessage) : void
++      {
++         this.petInfo("Your pet learned a new ability: " + (ObjectLibrary.typeToDisplayId_[m.value] || m.value) + "!");
++      }
++
++      private function onPetYardUpdate(m:PetIntMessage) : void
++      {
++         this.petInfo("Your pet yard grew (size " + m.value + ").");
++      }
++
++      private function onEvolvePet(m:EvolvePetMessage) : void
++      {
++         this.petInfo("Your pet evolved into " + (ObjectLibrary.typeToDisplayId_[m.finalSkin] || "something new") + "!");
++      }
++
++      private function onDeletePet(m:PetIntMessage) : void
++      {
++         if (RomtgPetCommands.activePetId == m.value)
++         {
++            RomtgPetCommands.activePetId = 0;
++         }
++      }
++
++      private function onHatchPet(m:HatchPetMessage) : void
++      {
++         this.petInfo("Your egg hatched: " + m.petName + "!");
++      }
++
+       public function usePortal(objectId:int) : void
+       {
+          var usePortal:UsePortal = this.messages.require(USEPORTAL) as UsePortal;
+@@ -1972,6 +2068,11 @@ public class GameServerConnection
+                   (go as Player).talismanEffectMask_ = stat.statValue_;
+                   continue;
+                default:
++                  // ROMTG-Doom pets: a pet's own stats (180-194)
++                  if (go is RomtgPet && (go as RomtgPet).setPetStat(stat.statType_, value, stat.strStatValue_))
++                  {
++                     continue;
++                  }
+                   trace("unhandled stat: " + stat.statType_);
+                   continue;
+             }
+diff --git a/TK-Client/src/kabam/rotmg/messaging/impl/data/StatData.as b/TK-Client/src/kabam/rotmg/messaging/impl/data/StatData.as
+index 224c7f7..a6a3ed6 100644
+--- a/TK-Client/src/kabam/rotmg/messaging/impl/data/StatData.as
++++ b/TK-Client/src/kabam/rotmg/messaging/impl/data/StatData.as
+@@ -146,6 +146,8 @@ public class StatData
+    public static const TALISMANDATA_6_STAT:int = 175;
+    public static const TALISMANDATA_7_STAT:int = 176;
+    public static const TALISMAN_EFFECT_MASK_STAT :int = 177;
++   // ROMTG-Doom pets (the server's StatDataType, from NR-CORE): 180..194; 183 is a string
++   public static const PET_SKIN_NAME_STAT:int = 183;
+ 
+ 
+    public var statType_:uint = 0;
+@@ -228,6 +230,7 @@ public class StatData
+          case TALISMANDATA_5_STAT:
+          case TALISMANDATA_6_STAT:
+          case TALISMANDATA_7_STAT:
++         case PET_SKIN_NAME_STAT:
+             return true;
+          default:
+             return false;
+diff --git a/TK-Client/src/romtg/pets/ActivePetUpdateRequestMessage.as b/TK-Client/src/romtg/pets/ActivePetUpdateRequestMessage.as
+new file mode 100644
+index 0000000..1624d0f
+--- /dev/null
++++ b/TK-Client/src/romtg/pets/ActivePetUpdateRequestMessage.as
+@@ -0,0 +1,28 @@
++package romtg.pets
++{
++   import flash.utils.IDataOutput;
++   import kabam.rotmg.messaging.impl.outgoing.OutgoingMessage;
++
++   /** ROMTG-Doom pets: follow (1), unfollow (2) or release (3) one of your pets. */
++   public class ActivePetUpdateRequestMessage extends OutgoingMessage
++   {
++      public var command:int;
++      public var petId:int;
++
++      public function ActivePetUpdateRequestMessage(id:uint, callback:Function)
++      {
++         super(id, callback);
++      }
++
++      override public function writeToOutput(data:IDataOutput) : void
++      {
++         data.writeByte(this.command);
++         data.writeInt(this.petId);
++      }
++
++      override public function toString() : String
++      {
++         return formatToString("ACTIVE_PET_UPDATE_REQUEST", "command", "petId");
++      }
++   }
++}
+diff --git a/TK-Client/src/romtg/pets/EvolvePetMessage.as b/TK-Client/src/romtg/pets/EvolvePetMessage.as
+new file mode 100644
+index 0000000..5b8516b
+--- /dev/null
++++ b/TK-Client/src/romtg/pets/EvolvePetMessage.as
+@@ -0,0 +1,30 @@
++package romtg.pets
++{
++   import flash.utils.IDataInput;
++   import kabam.rotmg.messaging.impl.incoming.IncomingMessage;
++
++   /** ROMTG-Doom pets: a fusion evolved a pet. */
++   public class EvolvePetMessage extends IncomingMessage
++   {
++      public var petId:int;
++      public var initialSkin:int;
++      public var finalSkin:int;
++
++      public function EvolvePetMessage(id:uint, callback:Function)
++      {
++         super(id, callback);
++      }
++
++      override public function parseFromInput(data:IDataInput) : void
++      {
++         this.petId = data.readInt();
++         this.initialSkin = data.readInt();
++         this.finalSkin = data.readInt();
++      }
++
++      override public function toString() : String
++      {
++         return formatToString("EVOLVE_PET", "petId", "initialSkin", "finalSkin");
++      }
++   }
++}
+diff --git a/TK-Client/src/romtg/pets/HatchPetMessage.as b/TK-Client/src/romtg/pets/HatchPetMessage.as
+new file mode 100644
+index 0000000..cd72569
+--- /dev/null
++++ b/TK-Client/src/romtg/pets/HatchPetMessage.as
+@@ -0,0 +1,28 @@
++package romtg.pets
++{
++   import flash.utils.IDataInput;
++   import kabam.rotmg.messaging.impl.incoming.IncomingMessage;
++
++   /** ROMTG-Doom pets: an egg hatched. */
++   public class HatchPetMessage extends IncomingMessage
++   {
++      public var petName:String;
++      public var petSkin:int;
++
++      public function HatchPetMessage(id:uint, callback:Function)
++      {
++         super(id, callback);
++      }
++
++      override public function parseFromInput(data:IDataInput) : void
++      {
++         this.petName = data.readUTF();
++         this.petSkin = data.readInt();
++      }
++
++      override public function toString() : String
++      {
++         return formatToString("HATCH_PET", "petName", "petSkin");
++      }
++   }
++}
+diff --git a/TK-Client/src/romtg/pets/PetIntMessage.as b/TK-Client/src/romtg/pets/PetIntMessage.as
+new file mode 100644
+index 0000000..973d897
+--- /dev/null
++++ b/TK-Client/src/romtg/pets/PetIntMessage.as
+@@ -0,0 +1,26 @@
++package romtg.pets
++{
++   import flash.utils.IDataInput;
++   import kabam.rotmg.messaging.impl.incoming.IncomingMessage;
++
++   /** ROMTG-Doom pets: a server message with one int (active pet, new ability, yard size, deleted pet). */
++   public class PetIntMessage extends IncomingMessage
++   {
++      public var value:int;
++
++      public function PetIntMessage(id:uint, callback:Function)
++      {
++         super(id, callback);
++      }
++
++      override public function parseFromInput(data:IDataInput) : void
++      {
++         this.value = data.readInt();
++      }
++
++      override public function toString() : String
++      {
++         return formatToString("PET_INT", "value");
++      }
++   }
++}
+diff --git a/TK-Client/src/romtg/pets/PetPanel.as b/TK-Client/src/romtg/pets/PetPanel.as
+new file mode 100644
+index 0000000..526185c
+--- /dev/null
++++ b/TK-Client/src/romtg/pets/PetPanel.as
+@@ -0,0 +1,81 @@
++package romtg.pets
++{
++   import com.company.assembleegameclient.game.GameSprite;
++   import com.company.assembleegameclient.parameters.Parameters;
++   import com.company.assembleegameclient.ui.TextBox;
++   import com.company.assembleegameclient.ui.TextButton;
++   import com.company.assembleegameclient.ui.panels.Panel;
++   import com.company.ui.SimpleText;
++   import flash.events.Event;
++   import flash.events.KeyboardEvent;
++   import flash.events.MouseEvent;
++   import flash.filters.DropShadowFilter;
++   import flash.text.TextFieldAutoSize;
++
++   /** ROMTG-Doom: walk up to one of your pets (in your pet yard) to have it follow you, or stop
++    *  following: its name and rarity, and a Follow / Unfollow button (or the interact key). */
++   public class PetPanel extends Panel
++   {
++      private var pet_:RomtgPet;
++      private var title_:SimpleText;
++      private var button_:TextButton;
++      private var following_:Boolean;
++
++      public function PetPanel(gs:GameSprite, pet:RomtgPet)
++      {
++         super(gs);
++         this.pet_ = pet;
++         this.title_ = new SimpleText(16, 0xFFFFFF, false, WIDTH, 0);
++         this.title_.setBold(true);
++         this.title_.htmlText = "<p align=\"center\">" + pet.displayName + " (" + pet.rarityName + ")</p>";
++         this.title_.autoSize = TextFieldAutoSize.CENTER;
++         this.title_.filters = [new DropShadowFilter(0, 0, 0)];
++         addChild(this.title_);
++         this.following_ = pet.petId == RomtgPetCommands.activePetId;
++         this.button_ = new TextButton(16, this.following_ ? "Unfollow" : "Follow");
++         addChild(this.button_);
++         addEventListener(Event.ADDED_TO_STAGE, this.onAdded);
++         addEventListener(Event.REMOVED_FROM_STAGE, this.onRemoved);
++      }
++
++      private function onAdded(event:Event) : void
++      {
++         this.title_.y = 6;
++         this.button_.x = WIDTH / 2 - this.button_.width / 2;
++         this.button_.y = HEIGHT - this.button_.height - 4;
++         this.button_.addEventListener(MouseEvent.CLICK, this.onClick);
++         stage.addEventListener(KeyboardEvent.KEY_DOWN, this.onKey);
++      }
++
++      private function onRemoved(event:Event) : void
++      {
++         if (stage != null)
++         {
++            stage.removeEventListener(KeyboardEvent.KEY_DOWN, this.onKey);
++         }
++      }
++
++      private function onKey(event:KeyboardEvent) : void
++      {
++         if (event.keyCode == Parameters.data_.interact && !TextBox.isInputtingText)
++         {
++            this.onClick(null);
++         }
++      }
++
++      private function onClick(event:MouseEvent) : void
++      {
++         if (this.following_)
++         {
++            RomtgPetCommands.unfollow(gs_, this.pet_.petId);
++         }
++         else
++         {
++            RomtgPetCommands.follow(gs_, this.pet_.petId);
++         }
++         this.following_ = !this.following_;
++         this.button_.setText(this.following_ ? "Unfollow" : "Follow");
++         this.button_.x = WIDTH / 2 - this.button_.width / 2;
++      }
++   }
++}
+diff --git a/TK-Client/src/romtg/pets/PetUpgradeRequestMessage.as b/TK-Client/src/romtg/pets/PetUpgradeRequestMessage.as
+new file mode 100644
+index 0000000..5b0a19f
+--- /dev/null
++++ b/TK-Client/src/romtg/pets/PetUpgradeRequestMessage.as
+@@ -0,0 +1,40 @@
++package romtg.pets
++{
++   import flash.utils.IDataOutput;
++   import kabam.rotmg.messaging.impl.outgoing.OutgoingMessage;
++
++   /** ROMTG-Doom pets: feed a pet (2), fuse two (3), or grow the yard (1); paid in gold (0) or fame (1). */
++   public class PetUpgradeRequestMessage extends OutgoingMessage
++   {
++      public var transType:int;
++      public var petId1:int;
++      public var petId2:int;
++      public var objectId:int;
++      public var slotObjectId:int;
++      public var slotId:int;
++      public var slotObjectType:int;
++      public var currency:int = 0;
++
++      public function PetUpgradeRequestMessage(id:uint, callback:Function)
++      {
++         super(id, callback);
++      }
++
++      override public function writeToOutput(data:IDataOutput) : void
++      {
++         data.writeByte(this.transType);
++         data.writeInt(this.petId1);
++         data.writeInt(this.petId2);
++         data.writeInt(this.objectId);
++         data.writeInt(this.slotObjectId);
++         data.writeByte(this.slotId);
++         data.writeInt(this.slotObjectType);
++         data.writeByte(this.currency);
++      }
++
++      override public function toString() : String
++      {
++         return formatToString("PET_UPGRADE_REQUEST", "transType", "petId1", "petId2", "slotId");
++      }
++   }
++}
+diff --git a/TK-Client/src/romtg/pets/PetUpgraderObject.as b/TK-Client/src/romtg/pets/PetUpgraderObject.as
+new file mode 100644
+index 0000000..c461541
+--- /dev/null
++++ b/TK-Client/src/romtg/pets/PetUpgraderObject.as
+@@ -0,0 +1,23 @@
++package romtg.pets
++{
++   import com.company.assembleegameclient.game.GameSprite;
++   import com.company.assembleegameclient.objects.GameObject;
++   import com.company.assembleegameclient.objects.IInteractiveObject;
++   import com.company.assembleegameclient.ui.panels.Panel;
++
++   /** ROMTG-Doom: the Pet Upgrader in your pet yard (XML Class "PetUpgrader"): stand by it to
++    *  open your pets. */
++   public class PetUpgraderObject extends GameObject implements IInteractiveObject
++   {
++      public function PetUpgraderObject(objectXML:XML)
++      {
++         super(objectXML);
++         isInteractive_ = true;
++      }
++
++      public function getPanel(gs:GameSprite) : Panel
++      {
++         return new PetsPanel(gs);
++      }
++   }
++}
+diff --git a/TK-Client/src/romtg/pets/PetsPanel.as b/TK-Client/src/romtg/pets/PetsPanel.as
+new file mode 100644
+index 0000000..70059ff
+--- /dev/null
++++ b/TK-Client/src/romtg/pets/PetsPanel.as
+@@ -0,0 +1,63 @@
++package romtg.pets
++{
++   import com.company.assembleegameclient.game.GameSprite;
++   import com.company.assembleegameclient.parameters.Parameters;
++   import com.company.assembleegameclient.ui.TextBox;
++   import com.company.assembleegameclient.ui.TextButton;
++   import com.company.assembleegameclient.ui.panels.Panel;
++   import com.company.ui.SimpleText;
++   import flash.events.Event;
++   import flash.events.KeyboardEvent;
++   import flash.events.MouseEvent;
++   import flash.filters.DropShadowFilter;
++   import flash.text.TextFieldAutoSize;
++
++   /** ROMTG-Doom: the Pet Upgrader's panel: opens your pets window. */
++   public class PetsPanel extends Panel
++   {
++      private var title_:SimpleText;
++      private var open_:TextButton;
++
++      public function PetsPanel(gs:GameSprite)
++      {
++         super(gs);
++         this.title_ = new SimpleText(18, 0xFFFFFF, false, WIDTH, 0);
++         this.title_.setBold(true);
++         this.title_.htmlText = "<p align=\"center\">Pet Upgrader</p>";
++         this.title_.autoSize = TextFieldAutoSize.CENTER;
++         this.title_.filters = [new DropShadowFilter(0, 0, 0)];
++         addChild(this.title_);
++         this.open_ = new TextButton(16, "Your Pets");
++         addChild(this.open_);
++         addEventListener(Event.ADDED_TO_STAGE, this.onAdded);
++         addEventListener(Event.REMOVED_FROM_STAGE, this.onRemoved);
++      }
++
++      private function onAdded(event:Event) : void
++      {
++         this.title_.y = 6;
++         this.open_.x = WIDTH / 2 - this.open_.width / 2;
++         this.open_.y = HEIGHT - this.open_.height - 4;
++         this.open_.addEventListener(MouseEvent.CLICK, this.onOpen);
++         stage.addEventListener(KeyboardEvent.KEY_DOWN, this.onKey);
++      }
++
++      private function onRemoved(event:Event) : void
++      {
++         stage.removeEventListener(KeyboardEvent.KEY_DOWN, this.onKey);
++      }
++
++      private function onKey(event:KeyboardEvent) : void
++      {
++         if (event.keyCode == Parameters.data_.interact && !TextBox.isInputtingText)
++         {
++            this.onOpen(null);
++         }
++      }
++
++      private function onOpen(event:MouseEvent) : void
++      {
++         PetsWindow.open(gs_);
++      }
++   }
++}
+diff --git a/TK-Client/src/romtg/pets/PetsWindow.as b/TK-Client/src/romtg/pets/PetsWindow.as
+new file mode 100644
+index 0000000..7b5c308
+--- /dev/null
++++ b/TK-Client/src/romtg/pets/PetsWindow.as
+@@ -0,0 +1,351 @@
++package romtg.pets
++{
++   import com.company.assembleegameclient.game.GameSprite;
++   import com.company.assembleegameclient.objects.GameObject;
++   import com.company.assembleegameclient.objects.ObjectLibrary;
++   import com.company.assembleegameclient.objects.Player;
++   import com.company.assembleegameclient.ui.TextButton;
++   import com.company.ui.SimpleText;
++   import flash.display.Bitmap;
++   import flash.display.BitmapData;
++   import flash.display.Sprite;
++   import flash.events.Event;
++   import flash.events.MouseEvent;
++   import flash.filters.DropShadowFilter;
++   import flash.geom.Point;
++   import flash.utils.getQualifiedClassName;
++   import romtg.DoomLink;
++
++   /**
++    * ROMTG-Doom: your pets, in the pet yard: every pet with its rarity and abilities, and what you
++    * can do with it: make it your active pet (it follows you out of the yard), feed it an item
++    * from your inventory, fuse it with another pet of the same rarity, or release it. Prices are
++    * the server's (NR-CORE's): gold.
++    */
++   public class PetsWindow extends Sprite
++   {
++      private static const W:int = 560;
++      // A row: the name on top, the abilities under it, the buttons on a line of their own at
++      // the bottom right (they sat over the abilities, 2026-11-12).
++      private static const ROW:int = 80;
++      private static const MAX_ROWS:int = 6;
++      private static var current:PetsWindow;
++
++      private var gs_:GameSprite;
++      private var rows_:Sprite = new Sprite();
++      private var status_:SimpleText;
++      private var mode_:String = "";         // "" | "feed" | "fuse"
++      private var picked_:RomtgPet;
++      private var first_:int = 0;
++
++      public static function open(gs:GameSprite) : void
++      {
++         if (current != null && current.parent != null)
++         {
++            current.parent.removeChild(current);
++         }
++         current = new PetsWindow(gs);
++         gs.addChild(current);
++         current.fit();
++      }
++
++      /** Centred over RotMG's play area (left of its side panel) and shrunk to fit it, whatever
++       *  the window's size: TK's stage is in window pixels and its game sprite may be scaled, so
++       *  a fixed place ran off the bottom of the screen (2026-11-12). */
++      private function fit() : void
++      {
++         if (stage == null || parent == null)
++         {
++            return;
++         }
++         var tl:Point = parent.globalToLocal(new Point(0, 0));
++         var br:Point = parent.globalToLocal(new Point(stage.stageWidth, stage.stageHeight));
++         var areaW:Number = (br.x - tl.x) * 0.75;   // the play area: the left 600 of RotMG's 800
++         var areaH:Number = br.y - tl.y;
++         var h:Number = 60 + ROW * MAX_ROWS + 50;
++         var s:Number = Math.min(1, (areaH - 20) / h, (areaW - 20) / W);
++         scaleX = scaleY = s;
++         x = tl.x + (areaW - W * s) / 2;
++         y = tl.y + (areaH - h * s) / 2;
++      }
++
++      public function PetsWindow(gs:GameSprite)
++      {
++         super();
++         this.gs_ = gs;
++         graphics.beginFill(0x2b2b2b, 0.96);
++         graphics.lineStyle(2, 0x777777);
++         graphics.drawRect(0, 0, W, 60 + ROW * MAX_ROWS + 50);
++         graphics.endFill();
++         var title:SimpleText = text(20, 0xFFFFFF, true);
++         title.text = "Your Pets";
++         title.updateMetrics();
++         title.x = 14;
++         title.y = 8;
++         addChild(title);
++         this.status_ = text(14, 0xB3B3B3, false);
++         this.status_.x = 14;
++         this.status_.y = 34;
++         addChild(this.status_);
++         this.rows_.y = 56;
++         addChild(this.rows_);
++         var close:TextButton = new TextButton(14, "Close");
++         close.x = W - close.width - 12;
++         close.y = 10;
++         close.addEventListener(MouseEvent.CLICK, function(e:MouseEvent):void { closeWindow(); });
++         addChild(close);
++         var up:TextButton = new TextButton(14, "Up");
++         up.x = 14;
++         up.y = 60 + ROW * MAX_ROWS + 12;
++         up.addEventListener(MouseEvent.CLICK, function(e:MouseEvent):void { first_ = Math.max(0, first_ - MAX_ROWS); refresh(); });
++         addChild(up);
++         var down:TextButton = new TextButton(14, "Down");
++         down.x = up.x + up.width + 8;
++         down.y = up.y;
++         down.addEventListener(MouseEvent.CLICK, function(e:MouseEvent):void { first_ += MAX_ROWS; refresh(); });
++         addChild(down);
++         addEventListener(Event.ENTER_FRAME, this.onFrame);
++         this.refresh();
++      }
++
++      private var refreshAt:int = 0;
++
++      private function onFrame(event:Event) : void
++      {
++         // the yard's pets change (fed, fused, released): keep the list current
++         if (++this.refreshAt % 30 == 0)
++         {
++            this.refresh();
++         }
++      }
++
++      private function pets() : Array
++      {
++         var list:Array = [];
++         if (this.gs_ == null || this.gs_.map == null)
++         {
++            return list;
++         }
++         for each (var go:GameObject in this.gs_.map.goDict_)
++         {
++            var pet:RomtgPet = go as RomtgPet;
++            if (pet != null && pet.petId > 0)
++            {
++               list.push(pet);
++            }
++         }
++         list.sortOn("petId", Array.NUMERIC);
++         if (list.length == 0)
++         {
++            // Why none: every object here that is a pet by its XML, as the client holds it.
++            var seen:int = 0;
++            for each (var o:GameObject in this.gs_.map.goDict_)
++            {
++               if (o.props_ != null && ObjectLibrary.xmlLibrary_[o.objectType_] != null
++                   && String(ObjectLibrary.xmlLibrary_[o.objectType_].Class) == "Pet")
++               {
++                  seen++;
++                  var rp:RomtgPet = o as RomtgPet;
++                  DoomLink.log("pets window: object " + o.objectId_ + " type 0x" + o.objectType_.toString(16)
++                     + " is " + getQualifiedClassName(o) + (rp != null ? " petId " + rp.petId + " skin " + rp.skinType : ""));
++               }
++            }
++            DoomLink.log("pets window: no pets listed; " + seen + " pet objects in the map");
++         }
++         return list;
++      }
++
++      private function refresh() : void
++      {
++         while (this.rows_.numChildren > 0)
++         {
++            this.rows_.removeChildAt(0);
++         }
++         var list:Array = this.pets();
++         if (this.first_ >= list.length)
++         {
++            this.first_ = Math.max(0, list.length - MAX_ROWS);
++         }
++         if (this.mode_ == "feed")
++         {
++            this.status_.text = "Feed " + this.picked_.displayName + ": pick an item from your inventory below (5 gold).";
++         }
++         else if (this.mode_ == "fuse")
++         {
++            this.status_.text = "Fuse " + this.picked_.displayName + " with which " + this.picked_.rarityName + " pet?";
++         }
++         else
++         {
++            this.status_.text = list.length == 0 ? "No pets yet: hatch an egg (use it from your inventory)." : list.length + " pets";
++         }
++         this.status_.updateMetrics();
++         if (this.mode_ == "feed")
++         {
++            this.showInventory();
++            return;
++         }
++         for (var i:int = 0; i < MAX_ROWS && this.first_ + i < list.length; i++)
++         {
++            this.rows_.addChild(this.row(list[this.first_ + i], i));
++         }
++      }
++
++      private function row(pet:RomtgPet, i:int) : Sprite
++      {
++         var r:Sprite = new Sprite();
++         r.y = i * ROW;
++         r.graphics.beginFill(i % 2 == 0 ? 0x363636 : 0x303030);
++         r.graphics.drawRect(8, 0, W - 16, ROW - 4);
++         r.graphics.endFill();
++         var icon:BitmapData = pet.texture_ != null ? pet.texture_ : ObjectLibrary.getTextureFromType(pet.skinType || pet.objectType_);
++         if (icon != null)
++         {
++            var b:Bitmap = new Bitmap(icon);
++            b.scaleX = b.scaleY = 40 / Math.max(icon.width, icon.height);
++            b.x = 14;
++            b.y = 6;
++            r.addChild(b);
++         }
++         var name:SimpleText = text(16, rarityColor(pet.rarity), true);
++         var me:Player = this.gs_.map.player_;
++         var active:Boolean = me != null && pet.petId == RomtgPetCommands.activePetId;
++         name.text = pet.displayName + "  (" + pet.rarityName + ")" + (active ? "  - following you" : "");
++         name.updateMetrics();
++         name.x = 62;
++         name.y = 4;
++         r.addChild(name);
++         var abilities:SimpleText = text(13, 0xCCCCCC, false);
++         var parts:Array = [];
++         for (var a:int = 0; a < 3; a++)
++         {
++            var t:String = pet.abilityText(a);
++            if (t != "")
++            {
++               parts.push(t);
++            }
++         }
++         abilities.text = parts.join("   ") + "   (max level " + pet.maxLevel + ")";
++         abilities.updateMetrics();
++         abilities.x = 62;
++         abilities.y = 26;
++         r.addChild(abilities);
++
++         var bx:Number = W - 14;
++         if (this.mode_ == "fuse")
++         {
++            if (pet != this.picked_ && pet.rarity == this.picked_.rarity && pet.rarity < 4)
++            {
++               bx = button(r, bx, "Fuse into it", function():void {
++                  RomtgPetCommands.fuse(gs_, picked_.petId, pet.petId);
++                  mode_ = "";
++                  refresh();
++               });
++            }
++            button(r, bx, "Cancel", function():void { mode_ = ""; refresh(); });
++            return r;
++         }
++         bx = button(r, bx, "Release", function():void {
++            RomtgPetCommands.release(gs_, pet.petId);
++         });
++         if (pet.rarity < 4)
++         {
++            bx = button(r, bx, "Fuse", function():void { mode_ = "fuse"; picked_ = pet; refresh(); });
++         }
++         bx = button(r, bx, "Feed", function():void { mode_ = "feed"; picked_ = pet; refresh(); });
++         button(r, bx, active ? "Unfollow" : "Follow", function():void {
++            if (active)
++               RomtgPetCommands.unfollow(gs_, pet.petId);
++            else
++               RomtgPetCommands.follow(gs_, pet.petId);
++         });
++         return r;
++      }
++
++      /** Feeding: your inventory's items as buttons; a click feeds the picked pet that item. */
++      private function showInventory() : void
++      {
++         var me:Player = this.gs_.map.player_;
++         if (me == null)
++         {
++            return;
++         }
++         var col:int = 0, line:int = 0;
++         for (var slot:int = 4; slot < me.equipment_.length && slot < 20; slot++)
++         {
++            var type:int = me.equipment_[slot];
++            if (type <= 0)
++            {
++               continue;
++            }
++            var b:TextButton = new TextButton(13, String(ObjectLibrary.typeToDisplayId_[type] || type).substr(0, 22), 170);
++            b.x = 14 + col * 178;
++            b.y = line * 30;
++            b.addEventListener(MouseEvent.CLICK, feeder(slot, type));
++            this.rows_.addChild(b);
++            if (++col == 3)
++            {
++               col = 0;
++               line++;
++            }
++         }
++         var cancel:TextButton = new TextButton(14, "Cancel");
++         cancel.x = 14;
++         cancel.y = (line + 1) * 30 + 6;
++         cancel.addEventListener(MouseEvent.CLICK, function(e:MouseEvent):void { mode_ = ""; refresh(); });
++         this.rows_.addChild(cancel);
++      }
++
++      private function feeder(slot:int, type:int) : Function
++      {
++         return function(e:MouseEvent):void
++         {
++            RomtgPetCommands.feed(gs_, picked_.petId, gs_.map.player_.objectId_, slot, type);
++            mode_ = "";
++            refresh();
++         };
++      }
++
++      private static function button(r:Sprite, right:Number, label:String, act:Function) : Number
++      {
++         var b:TextButton = new TextButton(13, label);
++         b.x = right - b.width;
++         b.y = ROW - 4 - b.height - 3;
++         b.addEventListener(MouseEvent.CLICK, function(e:MouseEvent):void { act(); });
++         r.addChild(b);
++         return b.x - 6;
++      }
++
++      private static function text(size:int, color:uint, bold:Boolean) : SimpleText
++      {
++         var t:SimpleText = new SimpleText(size, color, false, 0, 0);
++         t.setBold(bold);
++         t.filters = [new DropShadowFilter(0, 0, 0)];
++         return t;
++      }
++
++      private static function rarityColor(rarity:int) : uint
++      {
++         switch (rarity)
++         {
++            case 1: return 0x7ED957;   // uncommon
++            case 2: return 0x4FA3FF;   // rare
++            case 3: return 0xC77DFF;   // legendary
++            case 4: return 0xFFC93C;   // divine
++         }
++         return 0xFFFFFF;
++      }
++
++      private function closeWindow() : void
++      {
++         removeEventListener(Event.ENTER_FRAME, this.onFrame);
++         if (parent != null)
++         {
++            parent.removeChild(this);
++         }
++         if (current == this)
++         {
++            current = null;
++         }
++      }
++   }
++}
+diff --git a/TK-Client/src/romtg/pets/RomtgPet.as b/TK-Client/src/romtg/pets/RomtgPet.as
+new file mode 100644
+index 0000000..6afbd1e
+--- /dev/null
++++ b/TK-Client/src/romtg/pets/RomtgPet.as
+@@ -0,0 +1,100 @@
++package romtg.pets
++{
++   import com.company.assembleegameclient.objects.GameObject;
++   import com.company.assembleegameclient.objects.ObjectLibrary;
++   import com.company.assembleegameclient.objects.TextureData;
++   import com.company.assembleegameclient.game.GameSprite;
++   import com.company.assembleegameclient.objects.IInteractiveObject;
++   import com.company.assembleegameclient.ui.panels.Panel;
++
++   /**
++    * ROMTG-Doom: one of RotMG's pets (XML Class "Pet"), as the server (ported from NR-CORE) sends
++    * it: which of your pets it is, its rarity, its three abilities, and its look (a PetSkin's
++    * picture, swapped in when the server says which).
++    */
++   public class RomtgPet extends GameObject implements IInteractiveObject
++   {
++      public static const RARITIES:Array = ["Common", "Uncommon", "Rare", "Legendary", "Divine"];
++
++      public var petId:int = 0;
++      public var petType:int = 0;
++      public var rarity:int = 0;
++      public var skinName:String = "";
++      public var skinType:int = 0;
++      public var maxLevel:int = 0;
++      public var abilityType:Array = [0, 0, 0];
++      public var abilityLevel:Array = [0, 0, 0];
++      public var abilityPower:Array = [0, 0, 0];
++
++      public function RomtgPet(objectXML:XML)
++      {
++         super(objectXML);
++      }
++
++      /** A pet stat (StatData.PET_*); false if it isn't one. */
++      public function setPetStat(stat:int, value:int, text:String) : Boolean
++      {
++         switch (stat)
++         {
++            case 180:
++               this.petId = value;
++               isInteractive_ = value > 0;   // one of your pets: walk up to it to have it follow you
++               return true;
++            case 181: this.petType = value; return true;
++            case 182: this.rarity = value; return true;
++            case 183: this.skinName = text; return true;
++            case 184: this.maxLevel = value; return true;
++            case 185: case 186: case 187: this.abilityPower[stat - 185] = value; return true;
++            case 188: case 189: case 190: this.abilityLevel[stat - 188] = value; return true;
++            case 191: case 192: case 193: this.abilityType[stat - 191] = value; return true;
++            case 194:
++               if (value != this.skinType)
++               {
++                  this.skinType = value;
++                  this.applySkin(value);
++               }
++               return true;
++         }
++         return false;
++      }
++
++      private function applySkin(type:int) : void
++      {
++         var data:TextureData = ObjectLibrary.typeToTextureData_[type];
++         if (data == null)
++         {
++            return;
++         }
++         texture_ = data.texture_;
++         mask_ = data.mask_;
++         animatedChar_ = data.animatedChar_;
++      }
++
++      public function getPanel(gs:GameSprite) : Panel
++      {
++         return new PetPanel(gs, this);
++      }
++
++      public function get rarityName() : String
++      {
++         return this.rarity >= 0 && this.rarity < RARITIES.length ? RARITIES[this.rarity] : "?";
++      }
++
++      public function get displayName() : String
++      {
++         return this.skinName != null && this.skinName != "" ? this.skinName : ObjectLibrary.typeToDisplayId_[objectType_];
++      }
++
++      /** "Heal 12" for ability i, or "" if the pet hasn't unlocked it. */
++      public function abilityText(i:int) : String
++      {
++         var type:int = this.abilityType[i];
++         if (type == 0 || this.abilityLevel[i] <= 0)
++         {
++            return "";
++         }
++         var name:String = ObjectLibrary.typeToDisplayId_[type] || ("Ability " + type);
++         return name.replace(" (RotMG Pet)", "") + " " + this.abilityLevel[i];
++      }
++   }
++}
+diff --git a/TK-Client/src/romtg/pets/RomtgPetCommands.as b/TK-Client/src/romtg/pets/RomtgPetCommands.as
+new file mode 100644
+index 0000000..67d6ab8
+--- /dev/null
++++ b/TK-Client/src/romtg/pets/RomtgPetCommands.as
+@@ -0,0 +1,44 @@
++package romtg.pets
++{
++   import com.company.assembleegameclient.game.GameSprite;
++
++   /** ROMTG-Doom pets: what the pets window asks the server (through GameServerConnection), and
++    *  which pet is your active one. */
++   public class RomtgPetCommands
++   {
++      public static const FOLLOW:int = 1;
++      public static const UNFOLLOW:int = 2;
++      public static const RELEASE:int = 3;
++      public static const UPGRADE_YARD:int = 1;
++      public static const FEED:int = 2;
++      public static const FUSE:int = 3;
++
++      /** Your active pet's id, as the server last said (-1/0: none). */
++      public static var activePetId:int = 0;
++
++      public static function follow(gs:GameSprite, petId:int) : void
++      {
++         gs.gsc_.romtgPetCommand(FOLLOW, petId);
++      }
++
++      public static function unfollow(gs:GameSprite, petId:int) : void
++      {
++         gs.gsc_.romtgPetCommand(UNFOLLOW, petId);
++      }
++
++      public static function release(gs:GameSprite, petId:int) : void
++      {
++         gs.gsc_.romtgPetCommand(RELEASE, petId);
++      }
++
++      public static function feed(gs:GameSprite, petId:int, playerId:int, slot:int, itemType:int) : void
++      {
++         gs.gsc_.romtgPetUpgrade(FEED, petId, 0, playerId, slot, itemType);
++      }
++
++      public static function fuse(gs:GameSprite, petId1:int, petId2:int) : void
++      {
++         gs.gsc_.romtgPetUpgrade(FUSE, petId1, petId2, 0, 0, 0);
++      }
++   }
++}

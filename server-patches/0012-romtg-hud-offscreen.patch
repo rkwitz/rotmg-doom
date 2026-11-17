@@ -1,0 +1,83 @@
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index 7597001..22173d8 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -575,6 +575,10 @@ package romtg
+                HudWindow.show();
+             }
+          }
++         else if (parts[0] == "hudok")
++         {
++            HudWindow.placed();   // the swapper has put the HUD window over Doom
++         }
+          else if (parts[0] == "act" && parts.length >= 2 && controlling)
+          {
+             act(String(parts[1]));
+diff --git a/TK-Client/src/romtg/HudWindow.as b/TK-Client/src/romtg/HudWindow.as
+index 6278d4a..d329836 100644
+--- a/TK-Client/src/romtg/HudWindow.as
++++ b/TK-Client/src/romtg/HudWindow.as
+@@ -81,10 +81,27 @@ package romtg
+        *  bigger, at the bottom middle of the screen, where your character would stand. */
+       private static const MY_BAR:Number = 4;
+ 
++      // Nothing in the window shows until the swapper says it has put the window over Doom
++      // (`hudok`), or after HIDDEN_MS whatever happens: it showed where it was for a moment,
++      // then jumped into place (Ryan, 2026-11-13).
++      private static const HIDDEN_MS:int = 3000;
++      private static var shownAt:int = 0;
++
++      /** The swapper has put the window over Doom: its contents can show. */
++      public static function placed() : void
++      {
++         if (root != null)
++         {
++            root.visible = true;
++         }
++      }
++
+       public static function show() : void
+       {
++         shownAt = getTimer();
+          if (window != null && !window.closed)
+          {
++            root.visible = false;
+             window.visible = true;
+             return;
+          }
+@@ -98,8 +115,13 @@ package romtg
+          window.stage.align = StageAlign.TOP_LEFT;
+          window.width = 800;
+          window.height = 600;
++         // Made off screen: the swapper puts it over Doom as soon as it shows. Made where AIR
++         // puts new windows, it showed there for a frame first (Ryan, 2026-11-13).
++         window.x = -20000;
++         window.y = -20000;
+          root = new Sprite();
+          root.mouseEnabled = root.mouseChildren = false;
++         root.visible = false;   // until placed()
+          window.stage.addChild(root);
+          credits = makeCredits();
+          root.addChild(credits);
+@@ -130,6 +152,10 @@ package romtg
+ 
+       public static function hide() : void
+       {
++         if (root != null)
++         {
++            root.visible = false;
++         }
+          if (window != null && !window.closed)
+          {
+             window.visible = false;
+@@ -272,6 +298,10 @@ package romtg
+          {
+             return;
+          }
++         if (!root.visible && now - shownAt >= HIDDEN_MS)
++         {
++            root.visible = true;
++         }
+          var k:Number = sh / 600;
+          root.scaleX = root.scaleY = k;
+          var w:Number = sw / k;   // the window's width in RotMG's own units
