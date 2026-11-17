@@ -1,3 +1,5 @@
+<img width="2560" height="1440" alt="rotmg-doom mp4_snapshot_01 16 000" src="https://github.com/user-attachments/assets/260202cf-3e15-4c41-9909-5e76eb2a4302" />
+
 # RotMG x Doom
 
 Walk around Realm of the Mad God in first person, in Doom.
