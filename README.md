@@ -323,8 +323,9 @@ Notes for AI coding agents are in [CLAUDE.md](CLAUDE.md).
 - [alloy-server](https://github.com/Zolmex/alloy-server) by Zolmex (MIT), the Mad Lab map and boss AI.
 - [Freedoom](https://freedoom.github.io), the free IWAD.
 
-License: to be decided before the first public release. The port patches derive from UZDoom
-(GPL-3.0) and the pet patches from NR-CORE (AGPL-3.0), so the repo as a whole would be AGPL-3.0.
+License: [AGPL-3.0](LICENSE). The port patches derive from UZDoom (GPL-3.0) and the pet patches
+from NR-CORE (AGPL-3.0), so the repo as a whole is AGPL-3.0. TKR and alloy-server code used here is
+MIT, which allows this.
 
 Unofficial fan project, not affiliated with DECA Games or id Software. Realm of the Mad God is
 (c) DECA Games; DOOM is (c) id Software. See [NOTICE](NOTICE).
