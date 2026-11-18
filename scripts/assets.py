@@ -366,6 +366,17 @@ def build() -> dict:
                                     sprites_dir, alt_pic["sprite"], Image):
                     look["anim"] = True
             entry.setdefault("alt", {})[str(number(alt.get("id")))] = look
+        # RandomTexture: RotMG gives each one of these (a shot, a rock, a flower...) one of its
+        # pictures at random, so a Staff of Yuletide Carols' two shots differ in colour; Doom
+        # only had the first picture (Ryan, 2026-11-17). All of them, the bridge picks per object.
+        variants = []
+        for tex in o.findall("RandomTexture/Texture"):
+            if tex.findtext("File") and tex.findtext("Index"):
+                var_pic = picture((tex.findtext("File").strip(), number(tex.findtext("Index"))))
+                if var_pic:
+                    variants.append({"sprite": var_pic["sprite"], "px": var_pic["px"], "py": var_pic["py"]})
+        if len(variants) > 1:
+            entry["random"] = variants
         anim = o.find("AnimatedTexture")
         if anim is not None and anim.findtext("File") and anim.findtext("Index"):
             if animation_frames(sets, sheets, anim.findtext("File").strip(), number(anim.findtext("Index")),

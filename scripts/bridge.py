@@ -336,6 +336,7 @@ class Bridge:
             info = self.objects_xml.get(shot[0]) if shot else None
             if not info:
                 return None
+            info = self.variant(info, key[1])
             x, y = self.doom_xy(shot[1], shot[2])
             # RotMG's own size for it (projectiles are drawn like characters, by their Size), but
             # yours a good deal smaller: they start right at your eye, where RotMG's top-down view
@@ -383,7 +384,20 @@ class Bridge:
         alt = info.get("alt", {}).get(str(self.alts.get(oid, 0)))
         if alt:
             info = {**info, "sprite": alt["sprite"], "px": alt["px"], "py": alt["py"], "anim": alt.get("anim", False)}
+        else:
+            info = self.variant(info, oid)
         return info
+
+    @staticmethod
+    def variant(info: dict, oid: int) -> dict:
+        """One of a RandomTexture object's pictures (assets.py `random`), the same one for the
+        same object every time it's shown. RotMG picks at random per object; by id, a weapon's
+        shots of one volley (ids one apart) get different pictures, as they do in RotMG."""
+        variants = info.get("random")
+        if not variants:
+            return info
+        pick = variants[oid % len(variants)]
+        return {**info, "sprite": pick["sprite"], "px": pick["px"], "py": pick["py"]}
 
     def health(self, oid: int, hp: int, most: int) -> None:
         """An enemy's health, for its bar at its feet in Doom."""
