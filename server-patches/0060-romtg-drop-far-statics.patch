@@ -1,0 +1,41 @@
+diff --git a/TK-Server/TKR.WorldServer/core/objects/player/PlayerUpdate.cs b/TK-Server/TKR.WorldServer/core/objects/player/PlayerUpdate.cs
+index d4b777f..771359e 100644
+--- a/TK-Server/TKR.WorldServer/core/objects/player/PlayerUpdate.cs
++++ b/TK-Server/TKR.WorldServer/core/objects/player/PlayerUpdate.cs
+@@ -46,11 +46,16 @@ namespace TKR.WorldServer.core.objects.player
+             var drops = new List<int>();
+             var staticDrops = new List<int>();
+ 
++            // ROMTG-Doom: measured from you (X, Y are the tile's place on the map), with a 2-tile
++            // margin so things right at the edge of sight aren't dropped and re-sent at every step.
++            var px = (int)Player.X;
++            var py = (int)Player.Y;
++            const int dropRadiusSqr = (VISIBILITY_RADIUS + 2) * (VISIBILITY_RADIUS + 2);
+             foreach (var staticTile in NewStaticObjects)
+             {
+-                var x = staticTile.X;
+-                var y = staticTile.Y;
+-                if (x * x + y * y > VISIBILITY_RADIUS_SQR || staticTile.ObjType == 0)
++                var x = staticTile.X - px;
++                var y = staticTile.Y - py;
++                if (x * x + y * y > dropRadiusSqr || staticTile.ObjType == 0)
+                     if (staticTile.ObjId != 0)
+                     {
+                         update.Drops.Add(staticTile.ObjId);
+diff --git a/TK-Server/TKR.WorldServer/core/terrain/Wmap.cs b/TK-Server/TKR.WorldServer/core/terrain/Wmap.cs
+index 6685709..2490688 100644
+--- a/TK-Server/TKR.WorldServer/core/terrain/Wmap.cs
++++ b/TK-Server/TKR.WorldServer/core/terrain/Wmap.cs
+@@ -86,6 +86,12 @@ namespace TKR.WorldServer.core.terrain
+                     for (short x = 0; x < Width; x++)
+                     {
+                         var tile = new WmapTile(dict[rdr.ReadInt16()]);
++                        // ROMTG-Doom: the tile knows where it is. PlayerUpdate.GetDrops measures
++                        // how far a static object is from you by it; X and Y were never set (always
++                        // 0), so no tree, wall or rock was ever dropped and the client kept every one
++                        // it had seen: the realm got slower the longer you played (Ryan, 2026-11-17).
++                        tile.X = x;
++                        tile.Y = y;
+                         if (ver == 2)
+                             tile.Elevation = rdr.ReadByte();
+ 

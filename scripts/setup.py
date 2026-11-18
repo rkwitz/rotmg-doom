@@ -211,19 +211,44 @@ def port_exe() -> Path:
     return port_build_dir() / PORT_BUILD_TYPE / "uzdoom.exe"
 
 
+def applied_record(checkout: Path) -> Path:
+    """The names of the patches applied to a checkout, one a line (inside its .git, so never
+    committed and gone with the checkout)."""
+    return checkout / ".git" / "romtg-applied-patches.txt"
+
+
 def apply_patches(checkout: Path, patches: Path) -> None:
-    """Apply numbered *.patch files in order; skip ones already applied."""
+    """Apply numbered *.patch files in order; skip ones already applied.
+
+    Applied patches are written down in the checkout. Testing a patch in reverse can't tell on
+    its own: once a later patch changes the same lines (0059 edits DoomLink.as, which 0002
+    created), the earlier one no longer reverses cleanly, and setup tried to apply 0002 again
+    (Ryan, 2026-11-17)."""
     files = sorted(patches.glob("*.patch"))
     if not files:
         info(f"no patches in {patches.name}/")
         return
+    record = applied_record(checkout)
+    done = set(record.read_text(encoding="utf-8").split()) if record.exists() else set()
+
+    def check(*extra: str) -> bool:
+        return subprocess.run(["git", "-C", str(checkout), "apply", "--check", *extra, str(patch)],
+                              capture_output=True).returncode == 0
+
     for patch in files:
-        if subprocess.run(["git", "-C", str(checkout), "apply", "--reverse", "--check", str(patch)],
-                          capture_output=True).returncode == 0:
+        if patch.name in done:
             ok(f"{patch.name} already applied")
             continue
-        run(["git", "-C", str(checkout), "apply", "--whitespace=nowarn", str(patch)])
-        ok(f"applied {patch.name}")
+        if check("--whitespace=nowarn"):
+            run(["git", "-C", str(checkout), "apply", "--whitespace=nowarn", str(patch)])
+            ok(f"applied {patch.name}")
+        elif check("--reverse"):
+            ok(f"{patch.name} already applied")
+        else:
+            raise SetupError(f"{patch.name} doesn't apply to {checkout.name}/ (edited by hand, or a patch "
+                             f"before it changed). Re-run with --force to start {checkout.name}/ fresh")
+        done.add(patch.name)
+        record.write_text("\n".join(sorted(done)) + "\n", encoding="utf-8")
 
 
 def cmd_port(args) -> bool:
