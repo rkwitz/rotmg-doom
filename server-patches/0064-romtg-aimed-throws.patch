@@ -1,0 +1,157 @@
+diff --git a/TK-Client/src/com/company/assembleegameclient/objects/Player.as b/TK-Client/src/com/company/assembleegameclient/objects/Player.as
+index 0156f48..6aec961 100644
+--- a/TK-Client/src/com/company/assembleegameclient/objects/Player.as
++++ b/TK-Client/src/com/company/assembleegameclient/objects/Player.as
+@@ -836,7 +836,8 @@ public class Player extends Character {
+         if (objectXML == null || !objectXML.hasOwnProperty("Usable")) {
+             return false;
+         }
+-        var pW:Point = map_.pSTopW(xS, yS);
++        // ROMTG-Doom: a throw aimed in Doom (DoomLink.throwNow) names its spot itself.
++        var pW:Point = DoomLink.abilityTarget != null ? DoomLink.abilityTarget.clone() : map_.pSTopW(xS, yS);
+         if (pW == null) {
+             SoundEffectLibrary.play("error");
+             return false;
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index 855284a..d2d2039 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -1088,6 +1088,7 @@ package romtg
+             if (!controlling)
+             {
+                endSpecial(map != null ? map.player_ : null);   // Space held as you left Doom
++               cancelThrow();
+             }
+             if (controlling)
+             {
+@@ -1100,6 +1101,10 @@ package romtg
+             gotoPath.length = 0;
+             firing = false;
+          }
++         else if (parts[0] == "throw" && parts.length >= 2 && !isNaN(Number(parts[1])))
++         {
++            throwDistance = Number(parts[1]);   // how far Doom's look says to throw (tiles)
++         }
+          else if (parts[0] == "goto" && parts.length >= 3)
+          {
+             gotoX = Number(parts[1]);
+@@ -1209,6 +1214,91 @@ package romtg
+          return dx * dx + dy * dy > GOTO_MAX_TILES * GOTO_MAX_TILES;
+       }
+ 
++      /** Abilities thrown at a spot on the ground: aimed by looking up and down in Doom. */
++      private static const THROWN:Array = ["Trap", "PoisonGrenade", "VampireBlast", "StasisBlast", "Teleport", "Lightning"];
++      /** Nearest and farthest throw (tiles); a teleport goes up to its maxDistance, at most TELEPORT_MAX. */
++      private static const THROW_MIN:Number = 1;
++      private static const THROW_MAX:Number = 8;
++      private static const TELEPORT_MAX:Number = 10;
++      /** How far to throw (tiles), as Doom's look up or down says (`throw TILES`). */
++      public static var throwDistance:Number = 4;
++      /** Space is held with a thrown ability: aiming, thrown on release. */
++      private static var throwAiming:Boolean = false;
++      /** Where the next ability goes (map tiles), for Player.useAltWeapon instead of the mouse. */
++      public static var abilityTarget:Point = null;
++
++      /** The equipped ability's Activate that throws it at a spot, or null. */
++      private static function throwActivate(player:Player) : XML
++      {
++         if (player == null || player.equipment_ == null || player.equipment_[1] <= 0)
++         {
++            return null;
++         }
++         var xml:XML = ObjectLibrary.xmlLibrary_[player.equipment_[1]];
++         if (xml == null)
++         {
++            return null;
++         }
++         for each (var a:XML in xml.Activate)
++         {
++            if (THROWN.indexOf(a.toString()) >= 0)
++            {
++               return a;
++            }
++         }
++         return null;
++      }
++
++      private static function throwMax(a:XML) : Number
++      {
++         if (a.toString() == "Teleport")
++         {
++            return Math.min(TELEPORT_MAX, Number(a.@maxDistance) || TELEPORT_MAX);
++         }
++         return THROW_MAX;
++      }
++
++      /** Throw the held ability where Doom aims: throwDistance tiles along your aim, on that
++       *  square's middle (RotMG targets squares too: Map.pSTopW). */
++      private static function throwNow(player:Player) : void
++      {
++         var a:XML = throwActivate(player);
++         if (player == null || a == null)
++         {
++            return;
++         }
++         var d:Number = Math.max(THROW_MIN, Math.min(throwMax(a), throwDistance));
++         var x:Number = player.x_ + Math.cos(aim) * d;
++         var y:Number = player.y_ + Math.sin(aim) * d;
++         if (map != null)
++         {
++            x = Math.max(0, Math.min(map.width_ - 1, x));
++            y = Math.max(0, Math.min(map.height_ - 1, y));
++         }
++         abilityTarget = new Point(int(x) + 0.5, int(y) + 0.5);
++         try
++         {
++            if (player.useAltWeapon(abilityX(), abilityY(), UseType.START_USE))
++            {
++               player.useAltWeapon(abilityX(), abilityY(), UseType.END_USE);
++            }
++         }
++         finally
++         {
++            abilityTarget = null;
++         }
++      }
++
++      /** Stop aiming a throw without throwing (Doom lost the controls). */
++      private static function cancelThrow() : void
++      {
++         if (throwAiming)
++         {
++            throwAiming = false;
++            send("throwaim 0");
++         }
++      }
++
+       /** The ability key is held down (useSpecial:down went through, :up not yet). */
+       private static var specialHeld:Boolean = false;
+ 
+@@ -1270,6 +1360,27 @@ package romtg
+             // each aimed where Doom looks then. The ninja's star (MultiPhase) starts on the press
+             // and is thrown on the release; Doom pressed and let go at once, so it couldn't be
+             // held (Ryan, 2026-11-17). Other abilities act on the press only, as before.
++            // Thrown abilities (the huntress's trap, the assassin's poison, the necromancer's
++            // skull, teleports...): held to aim, thrown on release, as far as Doom's look up or
++            // down says (`throw TILES`); Doom draws the arc and where it lands meanwhile
++            // (`throwaim`). RotMG throws at the mouse; Doom had a fixed spot 4 tiles ahead
++            // (Ryan, 2026-11-18).
++            var thrown:XML = throwActivate(player);
++            if (thrown != null && half != null)
++            {
++               if (half == "down" && !throwAiming)
++               {
++                  throwAiming = true;
++                  send("throwaim 1 " + fix(throwMax(thrown)) + " " + fix(Math.max(0.5, Number(thrown.@radius) || 0.5)));
++               }
++               else if (half == "up" && throwAiming)
++               {
++                  throwAiming = false;
++                  send("throwaim 0");
++                  throwNow(player);
++               }
++               return;
++            }
+             if (half == "up")
+             {
+                endSpecial(player);

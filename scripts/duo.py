@@ -154,14 +154,63 @@ PLAY_AREA = 600 / 800   # the play area is the left 600 of the stage, all 600 hi
 ACTIONS = {0x46: "useHealthPotion",   # F
            0x56: "useMagicPotion",    # V
            0x52: "escapeToNexus",     # R: recall to the nexus
-           0x20: "useSpecial",        # Space: your ability, aimed where you look
            0x0D: "interact"}          # Enter: enter a portal, open a bag...
 # Held keys: pressed in RotMG for as long as you hold them (camera turning, as in RotMG, so the
 # side panel's live view turns with it). Q and E, RotMG's own keys for it.
-HELD_ACTIONS = {0x51: "rotateLeft",    # Q
+HELD_ACTIONS = {0x20: "useSpecial",    # Space: your ability, aimed where you look; held, as the
+                                    # ninja's star needs (thrown on release; Ryan 2026-11-17)
+                0x51: "rotateLeft",    # Q
                 0x45: "rotateRight"}   # E
 for _slot in range(8):
     ACTIONS[0x31 + _slot] = f"useInvSlot{_slot + 1}"   # 1-8: inventory slots
+AUTO_SWAP_SPAN = 6.0   # seconds: more than three swaps the game asks for in this long is a loop
+# Which of those follow RotMG's own key bindings (its Options, sent as `binds`): the press
+# kind and the held kind. Enter stays an interact key in Doom whatever RotMG's is (Doom has no
+# chat to take it).
+PRESS_BINDS = ("useHealthPotion", "useMagicPotion", "escapeToNexus", "interact") + tuple(f"useInvSlot{i}" for i in range(1, 9))
+HELD_BINDS = ("useSpecial", "rotateLeft", "rotateRight")
+
+
+def apply_binds(binds: dict, vks: set, quit_vks: set) -> None:
+    """RotMG's key bindings (bridge.binds) for the keys taken in Doom, and its swap and close
+    keys (romtgSwap, romtgQuit, in RotMG's Options; Ryan 2026-11-18). Changes ACTIONS,
+    HELD_ACTIONS and the hook's key sets in place."""
+    kept = {0x1B, VK_TAB}   # Esc (RotMG's options) and Tab (the side panel) stay as they are
+    press = {vk: name for name in PRESS_BINDS if 0 < (vk := binds.get(name, 0)) < 256 and vk not in kept}
+    held = {vk: name for name in HELD_BINDS if 0 < (vk := binds.get(name, 0)) < 256 and vk not in kept}
+    if not press and not held:
+        return
+    press.setdefault(0x0D, "interact")
+    for vk in held:
+        press.pop(vk, None)
+    ACTIONS.clear()
+    ACTIONS.update(press)
+    HELD_ACTIONS.clear()
+    HELD_ACTIONS.update(held)
+    swap = binds.get("romtgSwap", 0)
+    if 0 < swap < 256:
+        vks.clear()
+        vks.update({swap, KEYS["scrolllock"]})   # Scroll Lock always swaps too
+    camera = binds.get("romtgCamera", 0)
+    if 0 < camera < 256:
+        CAMERA_VKS.clear()
+        CAMERA_VKS.add(camera)
+        press.pop(camera, None)
+        held.pop(camera, None)
+        ACTIONS.pop(camera, None)
+        HELD_ACTIONS.pop(camera, None)
+    quit_key = binds.get("romtgQuit", 0)
+    if quit_vks and 0 < quit_key < 256:   # (left off when started with --quit-key none)
+        quit_vks.clear()
+        quit_vks.add(quit_key)
+    log(f"keys from RotMG's options: swap {sorted(hex(v) for v in vks)}, close {sorted(hex(v) for v in quit_vks)}, "
+        + ", ".join(f"{n} {v:#x}" for v, n in sorted({**ACTIONS, **HELD_ACTIONS}.items())))
+
+
+# In Doom: first / third person (RotMG's Options, romtgCamera; C by default, Ryan 2026-11-20).
+CAMERA_VKS = {0x43}
+
+
 VK_TAB = 0x09   # in Doom: let go of Doom so the mouse can use RotMG's side panel; Tab again to return
 
 
@@ -588,6 +637,8 @@ class Duo:
         self.options_from_doom = False       # set_options took you out of Doom
         self.dialog_centre = None   # last `dlgcx` sent
         self.drag_button = False    # the left button was down (watch_drop)
+        self.auto_swaps: list[float] = []   # when the game swapped by itself (auto_swap)
+        self.auto_held = False
         self.modal_panel = False # ...and it switched on Tab
         self.hud_ok = False      # told the client its HUD window is in place ("hudok")
         self.circle = None       # RotMG's circle of ground (find_circle), for the corner view
@@ -682,14 +733,17 @@ class Duo:
                 if self.modal and rect is None:
                     shown = None   # where it is isn't known yet: all of RotMG
                 elif rect:
-                    shown.append((max(0, round(rect[0] * k) - 2), max(0, round(rect[1] * k) - 2),
-                                  round(rect[2] * k) + 4, round(rect[3] * k) + 4))
+                    # Its own rectangle, a pixel in: a margin showed RotMG's game round it, the
+                    # dialogs' edges not being square (Ryan, 2026-11-18; the client also stops
+                    # drawing the game behind it).
+                    shown.append((round(rect[0] * k) + 1, round(rect[1] * k) + 1,
+                                  max(1, round(rect[2] * k) - 2), max(1, round(rect[3] * k) - 2)))
                 # A menu (teleport, player...) opened from the side panel pops up to its left,
                 # over Doom: shown too, and clickable (Ryan, 2026-11-15).
                 menu = self.bridge.menu_rect if self.bridge else None
                 if menu and shown is not None:
-                    shown.append((max(0, round(menu[0] * k) - 2), max(0, round(menu[1] * k) - 2),
-                                  round(menu[2] * k) + 4, round(menu[3] * k) + 4))
+                    shown.append((round(menu[0] * k) + 1, round(menu[1] * k) + 1,
+                                  max(1, round(menu[2] * k) - 2), max(1, round(menu[3] * k) - 2)))
                 mini.clip(shown)
                 mini.place(rx, y, rw, h, overlay=False, on_top=self.on_top)
                 if self.on_top:
@@ -877,6 +931,22 @@ class Duo:
             self.focus_doom()
         self.layout(force=True)   # focusing RotMG lifts it: put it back under Doom at once
 
+    def auto_swap(self, why: str) -> None:
+        """A swap the game asked for (its options or a menu came up or went, you left or
+        entered a game), not you. If those keep coming back and forth (four in AUTO_SWAP_SPAN
+        seconds), they stop until you swap yourself: a friend's screen flickered between the two
+        for good, only a restart fixed it (2026-11-18)."""
+        now = time.monotonic()
+        self.auto_swaps = [t for t in self.auto_swaps if now - t < AUTO_SWAP_SPAN]
+        if self.auto_held:
+            return
+        if len(self.auto_swaps) >= 3:
+            self.auto_held = True
+            log(f"the game keeps swapping by itself ({why}): held until you swap (the swap key or Doom button)")
+            return
+        self.auto_swaps.append(now)
+        self.swap()
+
     def set_options(self, up: bool) -> None:
         """RotMG's options screen (Esc, or the side panel's wrench) opened or closed. It covers
         RotMG's play area, behind Doom: RotMG comes up full screen for it, and Doom comes back
@@ -884,13 +954,13 @@ class Duo:
         if up and self.main == "doom":
             log("RotMG's options opened: showing RotMG")
             self.options_from_doom = True
-            self.swap()
+            self.auto_swap("options")
             self.focus_wanted = True
         elif not up and self.options_from_doom:
             self.options_from_doom = False
             if self.main == "rotmg":
                 log("RotMG's options closed: back to Doom")
-                self.swap()
+                self.auto_swap("options")
                 self.focus_wanted = True
 
     def go_home(self) -> None:
@@ -910,13 +980,13 @@ class Duo:
         if not ingame and self.main == "doom":
             log("left the game for RotMG's menus: showing RotMG")
             self.out_of_game_from_doom = True
-            self.swap()
+            self.auto_swap("in or out of a game")
             self.focus_wanted = True
         elif ingame and self.out_of_game_from_doom:
             self.out_of_game_from_doom = False
             if self.main == "rotmg":
                 log("back in a game: back to Doom")
-                self.swap()
+                self.auto_swap("in or out of a game")
                 self.focus_wanted = True
 
     def set_modal(self, on: bool) -> None:
@@ -997,6 +1067,10 @@ class Duo:
                 self.swap_wanted = True
         if self.swap_wanted:
             self.swap_wanted = False
+            if self.auto_held:
+                log("you swapped: the game's own swaps are back on")
+            self.auto_held = False
+            self.auto_swaps = []
             if self.main == "rotmg" and self.bridge and (self.bridge.options or self.bridge.modal):
                 # Not into Doom while RotMG's options or a dialog is up: close it first.
                 note("cover-keep", "RotMG's options or a dialog is open: close it before going back to Doom")
@@ -1178,6 +1252,15 @@ def run(key: str = "tilde,scrolllock", side: float = 0.4, start: str = "rotmg", 
                 else:
                     held.discard(kb.vkCode)
                 return 1
+            # The camera key in Doom: first <-> third person (Doom's own camera, via the bridge).
+            if kb.vkCode in CAMERA_VKS and front == doom_hwnd and duo.main == "doom":
+                if down and kb.vkCode not in held:
+                    duo.actions.append("camera")
+                if down:
+                    held.add(kb.vkCode)
+                else:
+                    held.discard(kb.vkCode)
+                return 1
             # RotMG's held keys while you're in Doom: down on press, up on release.
             if kb.vkCode in HELD_ACTIONS and front == doom_hwnd and duo.main == "doom":
                 if down and kb.vkCode not in held:
@@ -1196,6 +1279,10 @@ def run(key: str = "tilde,scrolllock", side: float = 0.4, start: str = "rotmg", 
                 else:
                     held.discard(kb.vkCode)
                 return 1
+            # Let go of a held key after leaving Doom (Space held as you swapped): forgotten, or
+            # its next press in Doom never went through. The client already ended it on `ctl 0`.
+            if not down:
+                held.discard(kb.vkCode)
         return user32.CallNextHookEx(None, code, wparam, lparam)
 
     held: set[int] = set()
@@ -1209,6 +1296,7 @@ def run(key: str = "tilde,scrolllock", side: float = 0.4, start: str = "rotmg", 
         + ". Ctrl+C here stops only the swapper.")
     duo.layout(force=True)
     msg = wintypes.MSG()
+    binds_seen = 0
     try:
         failures = 0
         while all(g.alive() for g in duo.games.values()) and not quit_wanted:
@@ -1223,6 +1311,9 @@ def run(key: str = "tilde,scrolllock", side: float = 0.4, start: str = "rotmg", 
                 user32.DispatchMessageW(ctypes.byref(msg))
             try:
                 duo.tick()
+                if duo.bridge is not None and duo.bridge.binds_seq != binds_seen:
+                    binds_seen = duo.bridge.binds_seq
+                    apply_binds(duo.bridge.binds, vks, quit_vks)
                 failures = 0
             except Exception:   # keep the swapper (and so ~ and F10) alive; say what broke
                 failures += 1

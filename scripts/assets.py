@@ -157,6 +157,67 @@ def animation_frames(sets, sheets, sheet_name, index, sprites_dir, sprite, Image
     return True
 
 
+def back_frames(sets, sheets, sheet_name, index, sprites_dir, sprite, Image) -> bool:
+    """A character's back (RotMG's UP row, the third of its block: AnimatedChar.loadDir(14)) as
+    frames J (standing), K, L (walking), M, N (attacking) of SPRITE: your own character seen
+    from behind in Doom's third person (Ryan, 2026-11-20). True if written."""
+    if sheet_name not in sets:
+        return False
+    png, w, h, bw, bh = sets[sheet_name]
+    if bw < w * 7 or bh < h * 3:
+        return False   # no back row
+    sheet = sheets.get(sheet_name) or Image.open(png).convert("RGBA")
+    sheets[sheet_name] = sheet
+    cols = sheet.width // bw
+    if cols == 0:
+        return False
+    x0, y0 = index % cols * bw, index // cols * bh + 2 * h
+    if y0 + h > sheet.height:
+        return False
+
+    def frame(k):
+        cell = sheet.crop((x0 + k * w, y0, x0 + k * w + w, y0 + h))
+        return cell if cell.getbbox() is not None else None
+
+    stand = frame(0)
+    if stand is None:
+        return False
+    walk1, walk2 = frame(1) or stand, frame(2) or stand
+    attack1, attack2 = frame(4), frame(5)
+    attack1 = attack1 or attack2 or walk1
+    attack2 = attack2 or attack1
+    for letter, img in (("J", stand), ("K", walk1), ("L", walk2), ("M", attack1), ("N", attack2)):
+        (sprites_dir / f"{sprite}{letter}0.png").write_bytes(png_with_grab(img, w // 2, h // 2))
+    return True
+
+
+def sprite_masks(sprites_dir: Path) -> str:
+    """Which pixels of every small sprite are solid, for the mod (romtgmsk.txt): a line
+    `NAME W H HEX` per picture, its pixels row by row from the top, a bit each (alpha over half),
+    in hex. Doom cuts your health bar (third person) only where a nearer picture's solid pixels
+    are, not its whole square (Ryan, 2026-11-21)."""
+    from PIL import Image
+    lines = []
+    for png in sorted(sprites_dir.glob("*.png")):
+        img = Image.open(png)
+        w, h = img.size
+        if w > 48 or h > 48:
+            continue
+        alpha = img.convert("RGBA").getchannel("A").tobytes()
+        bits = "".join("1" if a > 127 else "0" for a in alpha)
+        bits += "0" * (-len(bits) % 4)
+        lines.append(f"{png.stem} {w} {h} {int(bits, 2):0{len(bits) // 4}x}" if bits else f"{png.stem} {w} {h} 0")
+    return "\n".join(lines) + "\n"
+
+
+def figure_width(png: Path) -> int:
+    """How many pixels wide the figure in a picture is (its non-transparent columns): your
+    health bar in Doom's third person is that wide (Ryan, 2026-11-21)."""
+    from PIL import Image
+    box = Image.open(png).convert("RGBA").getbbox()
+    return box[2] - box[0] if box else 0
+
+
 def blade_in_hand(png: Path, mirror: bool):
     """A blade's picture turned for your hand, or None if it's right as it is: tip top right
     (mirrored first if MIRROR) and the hilt bottom left. The hilt end is the one whose half
@@ -382,6 +443,10 @@ def build() -> dict:
             if animation_frames(sets, sheets, anim.findtext("File").strip(), number(anim.findtext("Index")),
                                 sprites_dir, pic["sprite"], Image):
                 entry["anim"] = True
+            if back_frames(sets, sheets, anim.findtext("File").strip(), number(anim.findtext("Index")),
+                           sprites_dir, pic["sprite"], Image):
+                entry["back"] = True
+                entry["fig_w"] = figure_width(sprites_dir / f"{pic['sprite']}J0.png")
         objects[number(o.get("type"))] = entry
 
     # ZWHT: one white pixel, tinted by Doom for the far ground (RomtgFar).

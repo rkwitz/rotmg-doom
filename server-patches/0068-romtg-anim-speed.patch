@@ -1,0 +1,55 @@
+diff --git a/TK-Client/src/com/company/assembleegameclient/objects/GameObject.as b/TK-Client/src/com/company/assembleegameclient/objects/GameObject.as
+index 55449f1..918fe8c 100644
+--- a/TK-Client/src/com/company/assembleegameclient/objects/GameObject.as
++++ b/TK-Client/src/com/company/assembleegameclient/objects/GameObject.as
+@@ -553,16 +553,29 @@ public class GameObject extends BasicObject {
+     /** ROMTG-Doom: what this character is doing and which way it faces, as draw() picks its
+      *  frames (ATTACK for ATTACK_PERIOD after it shoots, facing the shot unless it doesn't turn
+      *  for attacks; WALK while it moves, facing its way; else STAND): "ACTION FACING", 0 stand,
+-     *  1 walk, 2 attack, FACING in world radians. */
++     *  1 walk, 2 attack, FACING in world radians, then PERIOD: the ms its two frames take, as
++     *  draw() and Player.getTexture time them (a player's attack is its weapon's rate of fire,
++     *  others' 300 ms; walking goes with speed), so Doom plays them at RotMG's speed (Ryan,
++     *  2026-11-20: attacks looked much slower in Doom). */
+     public function doomAnim():String {
+         var t:int = getTimer();
+-        if (t < this.attackStart_ + ATTACK_PERIOD) {
+-            return "2 " + (this.props_.dontFaceAttacks_ ? this.facing_ : this.attackAngle_).toFixed(2);
++        var player:Player = this as Player;
++        var attackFor:int = player != null && player.attackPeriod_ > 0 ? player.attackPeriod_ : ATTACK_PERIOD;
++        if (t < this.attackStart_ + attackFor) {
++            return "2 " + (this.props_.dontFaceAttacks_ ? this.facing_ : this.attackAngle_).toFixed(2) + " " + attackFor;
+         }
+         if (this.moveVec_.x > ZERO_LIMIT || this.moveVec_.x < NEGATIVE_ZERO_LIMIT || this.moveVec_.y > ZERO_LIMIT || this.moveVec_.y < NEGATIVE_ZERO_LIMIT) {
+-            return "1 " + Math.atan2(this.moveVec_.y, this.moveVec_.x).toFixed(2);
++            var walkPer:int;
++            if (player != null) {
++                walkPer = player.doomWalkPeriod();
++            }
++            else {
++                walkPer = 0.5 / this.moveVec_.length;
++                walkPer = walkPer + (400 - walkPer % 400);
++            }
++            return "1 " + Math.atan2(this.moveVec_.y, this.moveVec_.x).toFixed(2) + " " + walkPer;
+         }
+-        return "0 " + this.facing_.toFixed(2);
++        return "0 " + this.facing_.toFixed(2) + " 0";
+     }
+ 
+     public function setSize(size:int):void {
+diff --git a/TK-Client/src/com/company/assembleegameclient/objects/Player.as b/TK-Client/src/com/company/assembleegameclient/objects/Player.as
+index 6aec961..6e1dd0c 100644
+--- a/TK-Client/src/com/company/assembleegameclient/objects/Player.as
++++ b/TK-Client/src/com/company/assembleegameclient/objects/Player.as
+@@ -1020,6 +1020,11 @@ public class Player extends Character {
+         return isParalyzed() || isPetrified() ? 0 : this.getMoveSpeed() * 1000;
+     }
+ 
++    /** ROMTG-Doom: ms for the two walking frames, as getTexture times them (doomAnim). */
++    public function doomWalkPeriod():int {
++        return 3.5 / this.getMoveSpeed();
++    }
++
+     private function getMoveSpeed():Number {
+         if (isSlowed()) {
+             return MIN_MOVE_SPEED * this.moveMultiplier_;

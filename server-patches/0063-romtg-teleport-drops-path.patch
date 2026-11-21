@@ -1,0 +1,68 @@
+diff --git a/TK-Client/src/kabam/rotmg/messaging/impl/GameServerConnection.as b/TK-Client/src/kabam/rotmg/messaging/impl/GameServerConnection.as
+index af7e2e7..9679639 100644
+--- a/TK-Client/src/kabam/rotmg/messaging/impl/GameServerConnection.as
++++ b/TK-Client/src/kabam/rotmg/messaging/impl/GameServerConnection.as
+@@ -1648,6 +1648,10 @@ public class GameServerConnection
+             return;
+          }
+          go.onGoto(_arg1.pos_.x_,_arg1.pos_.y_,this.gs_.lastUpdate_);
++         if(go == this.player)
++         {
++            DoomLink.teleported();   // ROMTG-Doom: Doom's path from before the jump is dropped
++         }
+       }
+ 
+       private function updateGameObject(go:GameObject, stats:Vector.<StatData>, isMyObject:Boolean) : void
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index 05ea2d8..855284a 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -1104,7 +1104,7 @@ package romtg
+          {
+             gotoX = Number(parts[1]);
+             gotoY = Number(parts[2]);
+-            hasGoto = controlling && !isNaN(gotoX) && !isNaN(gotoY);
++            hasGoto = controlling && !isNaN(gotoX) && !isNaN(gotoY) && !staleGoto(gotoX, gotoY);
+             if (hasGoto)
+             {
+                gotoPath.push(new Point(gotoX, gotoY));
+@@ -1176,6 +1176,39 @@ package romtg
+          }
+       }
+ 
++      /** Doom's gotos are dropped until then (ms, getTimer): the server just moved you. */
++      private static var gotoQuietUntil:int = 0;
++      private static const GOTO_QUIET_MS:int = 300;
++      /** A goto this far from you (tiles) is from before a jump: Doom walks you a step at a time. */
++      private static const GOTO_MAX_TILES:Number = 3;
++
++      /** The server moved you (a teleport cloak, the Teleport menu, a portal's landing...: its
++       *  Goto). Doom's path and the gotos already on their way lead back to where you were, and
++       *  you were walked back there (Ryan, 2026-11-17, the rogue's teleport cloak). Forgotten;
++       *  Doom catches up from your next position report. */
++      public static function teleported() : void
++      {
++         gotoPath.length = 0;
++         hasGoto = false;
++         gotoQuietUntil = getTimer() + GOTO_QUIET_MS;
++      }
++
++      private static function staleGoto(x:Number, y:Number) : Boolean
++      {
++         if (getTimer() < gotoQuietUntil)
++         {
++            return true;
++         }
++         var player:Player = map != null ? map.player_ : null;
++         if (player == null)
++         {
++            return false;
++         }
++         var dx:Number = x - player.x_;
++         var dy:Number = y - player.y_;
++         return dx * dx + dy * dy > GOTO_MAX_TILES * GOTO_MAX_TILES;
++      }
++
+       /** The ability key is held down (useSpecial:down went through, :up not yet). */
+       private static var specialHeld:Boolean = false;
+ 

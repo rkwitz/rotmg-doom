@@ -1,0 +1,127 @@
+diff --git a/TK-Client/src/kabam/rotmg/ui/view/CameraButton.as b/TK-Client/src/kabam/rotmg/ui/view/CameraButton.as
+index 4beb427..be0a6cd 100644
+--- a/TK-Client/src/kabam/rotmg/ui/view/CameraButton.as
++++ b/TK-Client/src/kabam/rotmg/ui/view/CameraButton.as
+@@ -4,6 +4,7 @@ package kabam.rotmg.ui.view
+    import flash.display.Sprite;
+    import flash.events.MouseEvent;
+    import flash.filters.GlowFilter;
++   import flash.geom.Rectangle;
+    import romtg.DoomLink;
+ 
+    /**
+@@ -32,6 +33,8 @@ package kabam.rotmg.ui.view
+       /** On a SIZE-unit square (HUDView scales it to the Doom button's size): a camera body, its
+        *  lens and viewfinder. */
+       public static const SIZE:int = 20;
++      /** What it draws (body, viewfinder, its outline), in its own units: HUDView lines it up by this. */
++      public static const VISUAL:Rectangle = new Rectangle(1, 3, 18, 15);
+ 
+       private function draw(color:uint) : void
+       {
+diff --git a/TK-Client/src/kabam/rotmg/ui/view/DoomButton.as b/TK-Client/src/kabam/rotmg/ui/view/DoomButton.as
+index 955bc89..feeb702 100644
+--- a/TK-Client/src/kabam/rotmg/ui/view/DoomButton.as
++++ b/TK-Client/src/kabam/rotmg/ui/view/DoomButton.as
+@@ -7,6 +7,7 @@ package kabam.rotmg.ui.view
+    import flash.display.Sprite;
+    import flash.events.MouseEvent;
+    import flash.geom.ColorTransform;
++   import flash.geom.Rectangle;
+    import romtg.DoomLink;
+ 
+    /**
+@@ -36,6 +37,13 @@ package kabam.rotmg.ui.view
+          addEventListener(MouseEvent.ROLL_OUT, this.onOut);
+       }
+ 
++      /** The part of the picture that's drawn (the arrows, their outline), in its own units. */
++      public function visualRect() : Rectangle
++      {
++         var r:Rectangle = this.icon.bitmapData.getColorBoundsRect(0xFF000000, 0, false);
++         return r.width > 0 && r.height > 0 ? r : new Rectangle(0, 0, this.icon.width, this.icon.height);
++      }
++
+       private function onOver(event:MouseEvent) : void
+       {
+          this.icon.transform.colorTransform = new ColorTransform(1, 0.8, 0.4);
+diff --git a/TK-Client/src/kabam/rotmg/ui/view/HUDView.as b/TK-Client/src/kabam/rotmg/ui/view/HUDView.as
+index daa24fc..9c81eb2 100644
+--- a/TK-Client/src/kabam/rotmg/ui/view/HUDView.as
++++ b/TK-Client/src/kabam/rotmg/ui/view/HUDView.as
+@@ -11,6 +11,7 @@ package kabam.rotmg.ui.view
+    import com.company.util.MoreColorUtil;
+    import com.company.util.SpriteUtil;
+    import flash.display.Bitmap;
++   import flash.display.DisplayObject;
+    import flash.display.BitmapData;
+    import flash.display.GraphicsPath;
+    import flash.display.GraphicsSolidFill;
+@@ -18,6 +19,7 @@ package kabam.rotmg.ui.view
+    import flash.display.Sprite;
+    import flash.events.Event;
+    import flash.geom.Point;
++   import flash.geom.Rectangle;
+ 
+ import kabam.rotmg.assets.MinimapOverlay;
+ import kabam.rotmg.game.view.components.TabStripView;
+@@ -114,22 +116,45 @@ import kabam.rotmg.game.view.components.TabStripView;
+          this.characterDetails.y = this.CHARACTER_DETAIL_PANEL_POSITION.y;
+          this.statMeters.x = this.STAT_METERS_POSITION.x;
+          this.statMeters.y = this.STAT_METERS_POSITION.y;
++         this.nexusIndicatorBitmap_.scaleX = this.nexusIndicatorBitmap_.scaleY = 1;
+          this.nexusIndicatorBitmap_.x = this.NEXUS_INDICATOR_POSITION.x - this.nexusIndicatorBitmap_.width - 2;
+          this.nexusIndicatorBitmap_.y = this.NEXUS_INDICATOR_POSITION.y - 14;
+-         // ROMTG-Doom: swap to Doom and Doom's first / third person camera, in the gap between
+-         // the tab strip's tabs (inventory, stats, backpack, talismans) and the nexus icon, as
+-         // big as the nexus icon if they fit, smaller if not: never over the talismans tab
+-         // (Ryan, 2026-11-20).
+-         var size:Number = this.nexusIndicatorBitmap_.height;
+-         var tabsRight:Number = this.TAB_STRIP_POSITION.x + 4 * (TabStripView.TAB_WIDTH + TabStripView.TAB_X_PADDING) + 2;
+-         var room:Number = this.nexusIndicatorBitmap_.x - 1 - tabsRight;
+-         size = Math.min(size, (room - 1) / 2);
+-         this.doomButton.scaleX = this.doomButton.scaleY = 1;
+-         this.doomButton.scaleX = this.doomButton.scaleY = size / this.doomButton.height;
+-         this.cameraButton.scaleX = this.cameraButton.scaleY = size / CameraButton.SIZE;
+-         this.doomButton.x = this.nexusIndicatorBitmap_.x - 1 - size;
+-         this.cameraButton.x = this.doomButton.x - 1 - size;
+-         this.doomButton.y = this.cameraButton.y = this.nexusIndicatorBitmap_.y + (this.nexusIndicatorBitmap_.height - size) / 2;
++         this.layoutIconRow();
++      }
++
++      /** ROMTG-Doom: the camera, Doom and nexus icons in a row, right to left from where the
++       *  nexus icon ends, all the same height by what they actually draw (not their padded
++       *  pictures: the Doom arrows fill little of theirs), in the gap between the tab strip's
++       *  tabs (inventory, stats, backpack, talismans) and the panel's edge. As tall as the
++       *  nexus icon if all three fit, all a little smaller if not; never over the talismans tab
++       *  (Ryan, 2026-11-21). */
++      private function layoutIconRow() : void
++      {
++         var nexus:Bitmap = this.nexusIndicatorBitmap_;
++         var nexusR:Rectangle = nexus.bitmapData.getColorBoundsRect(0xFF000000, 0, false);
++         var doomR:Rectangle = this.doomButton.visualRect();
++         var camR:Rectangle = CameraButton.VISUAL;
++         var right:Number = nexus.x + nexusR.right;
++         var middle:Number = nexus.y + nexusR.y + nexusR.height / 2;
++         var left:Number = this.TAB_STRIP_POSITION.x + 4 * (TabStripView.TAB_WIDTH + TabStripView.TAB_X_PADDING) + 3;
++         var gap:Number = 4;
++         var aspects:Number = nexusR.width / nexusR.height + doomR.width / doomR.height + camR.width / camR.height;
++         var h:Number = Math.min(nexusR.height, (right - left - 2 * gap) / aspects);
++         var x:Number = right;
++         x = this.placeIcon(nexus, nexusR, h, x, middle) - gap;
++         x = this.placeIcon(this.doomButton, doomR, h, x, middle) - gap;
++         this.placeIcon(this.cameraButton, camR, h, x, middle);
++      }
++
++      /** Scales ICON so the part it draws (R, in its own units) is H tall, with that part's right
++       *  edge at RIGHT and its middle at MIDDLE; returns that part's left edge. */
++      private function placeIcon(icon:DisplayObject, r:Rectangle, h:Number, right:Number, middle:Number) : Number
++      {
++         var s:Number = h / r.height;
++         icon.scaleX = icon.scaleY = s;
++         icon.x = right - r.right * s;
++         icon.y = middle - (r.y + r.height / 2) * s;
++         return icon.x + r.x * s;
+       }
+ 
+       public function setPlayerDependentAssets(gs:GameSprite) : void

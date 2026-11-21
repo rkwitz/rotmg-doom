@@ -1,0 +1,83 @@
+diff --git a/TK-Client/src/kabam/rotmg/ui/view/HUDView.as b/TK-Client/src/kabam/rotmg/ui/view/HUDView.as
+index 9c81eb2..2213d85 100644
+--- a/TK-Client/src/kabam/rotmg/ui/view/HUDView.as
++++ b/TK-Client/src/kabam/rotmg/ui/view/HUDView.as
+@@ -20,6 +20,8 @@ package kabam.rotmg.ui.view
+    import flash.events.Event;
+    import flash.geom.Point;
+    import flash.geom.Rectangle;
++   import flash.geom.Matrix;
++   import flash.filters.BitmapFilter;
+ 
+ import kabam.rotmg.assets.MinimapOverlay;
+ import kabam.rotmg.game.view.components.TabStripView;
+@@ -131,9 +133,14 @@ import kabam.rotmg.game.view.components.TabStripView;
+       private function layoutIconRow() : void
+       {
+          var nexus:Bitmap = this.nexusIndicatorBitmap_;
+-         var nexusR:Rectangle = nexus.bitmapData.getColorBoundsRect(0xFF000000, 0, false);
+-         var doomR:Rectangle = this.doomButton.visualRect();
+-         var camR:Rectangle = CameraButton.VISUAL;
++         this.doomButton.scaleX = this.doomButton.scaleY = 1;
++         this.cameraButton.scaleX = this.cameraButton.scaleY = 1;
++         // All three measured the same way: their solid pixels as drawn (outline and filters
++         // included), so a faint glow round one doesn't count as height (it did: the nexus icon
++         // came out smallest and the camera biggest, Ryan 2026-11-21).
++         var nexusR:Rectangle = solidRect(nexus);
++         var doomR:Rectangle = solidRect(this.doomButton);
++         var camR:Rectangle = solidRect(this.cameraButton);
+          var right:Number = nexus.x + nexusR.right;
+          var middle:Number = nexus.y + nexusR.y + nexusR.height / 2;
+          var left:Number = this.TAB_STRIP_POSITION.x + 4 * (TabStripView.TAB_WIDTH + TabStripView.TAB_X_PADDING) + 3;
+@@ -146,6 +153,51 @@ import kabam.rotmg.game.view.components.TabStripView;
+          this.placeIcon(this.cameraButton, camR, h, x, middle);
+       }
+ 
++      /** Where OBJ draws solid pixels (alpha over half), in its own units at scale 1, its own
++       *  filters (a glow outline) included. */
++      private static function solidRect(obj:DisplayObject) : Rectangle
++      {
++         var b:Rectangle = obj.getBounds(obj);
++         var pad:int = 8;
++         var w:int = Math.ceil(b.width) + 2 * pad;
++         var h:int = Math.ceil(b.height) + 2 * pad;
++         if (w <= 2 * pad || h <= 2 * pad)
++         {
++            return new Rectangle(0, 0, Math.max(1, b.width), Math.max(1, b.height));
++         }
++         var bd:BitmapData = new BitmapData(w, h, true, 0);
++         var m:Matrix = new Matrix();
++         m.translate(pad - b.x, pad - b.y);
++         bd.draw(obj, m);
++         if (obj.filters != null)
++         {
++            for each (var f:BitmapFilter in obj.filters)
++            {
++               bd.applyFilter(bd, bd.rect, new Point(0, 0), f);
++            }
++         }
++         var x0:int = w, y0:int = h, x1:int = -1, y1:int = -1;
++         for (var y:int = 0; y < h; y++)
++         {
++            for (var x:int = 0; x < w; x++)
++            {
++               if ((bd.getPixel32(x, y) >>> 24) > 128)
++               {
++                  if (x < x0) x0 = x;
++                  if (x > x1) x1 = x;
++                  if (y < y0) y0 = y;
++                  if (y > y1) y1 = y;
++               }
++            }
++         }
++         bd.dispose();
++         if (x1 < 0)
++         {
++            return new Rectangle(b.x, b.y, Math.max(1, b.width), Math.max(1, b.height));
++         }
++         return new Rectangle(x0 - pad + b.x, y0 - pad + b.y, x1 - x0 + 1, y1 - y0 + 1);
++      }
++
+       /** Scales ICON so the part it draws (R, in its own units) is H tall, with that part's right
+        *  edge at RIGHT and its middle at MIDDLE; returns that part's left edge. */
+       private function placeIcon(icon:DisplayObject, r:Rectangle, h:Number, right:Number, middle:Number) : Number

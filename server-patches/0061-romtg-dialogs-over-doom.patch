@@ -1,0 +1,73 @@
+diff --git a/TK-Client/src/io/decagames/rotmg/ui/popups/PopupView.as b/TK-Client/src/io/decagames/rotmg/ui/popups/PopupView.as
+index 469c955..3e3c5ae 100644
+--- a/TK-Client/src/io/decagames/rotmg/ui/popups/PopupView.as
++++ b/TK-Client/src/io/decagames/rotmg/ui/popups/PopupView.as
+@@ -58,7 +58,7 @@ package io.decagames.rotmg.ui.popups
+       public function showFade() : void
+       {
+          this.fadeContainer.graphics.beginFill(this.popupFadeColor,this.popupFadeAlpha);
+-         this.fadeContainer.graphics.drawRect(0,0,800,600);
++         this.fadeContainer.graphics.drawRect(-2000, -2000, 4800, 4600);   // ROMTG-Doom: the whole window (see DialogsView)
+          this.fadeContainer.graphics.endFill();
+       }
+       
+diff --git a/TK-Client/src/kabam/rotmg/dialogs/view/DialogsView.as b/TK-Client/src/kabam/rotmg/dialogs/view/DialogsView.as
+index b9365e1..c806faa 100644
+--- a/TK-Client/src/kabam/rotmg/dialogs/view/DialogsView.as
++++ b/TK-Client/src/kabam/rotmg/dialogs/view/DialogsView.as
+@@ -45,7 +45,9 @@ public class DialogsView extends Sprite {
+         var _local2:Graphics = this.background.graphics;
+         _local2.clear();
+         _local2.beginFill(_arg1, 0.6);
+-        _local2.drawRect(0, 0, 800, 600);
++        // ROMTG-Doom: the whole window, not its middle 800x600 (TK's stage is wider than that:
++        // the side panel was half gray, half not, Ryan 2026-11-15).
++        _local2.drawRect(-2000, -2000, 4800, 4600);
+         _local2.endFill();
+         this.background.visible = true;
+     }
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index 8bb4ae1..e7ef263 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -455,9 +455,12 @@ package romtg
+             dlg = DialogsView.instance.openView();
+          }
+          var want:Boolean = viewing && dialogCentre >= 0 && dlg != null && dlg.stage != null;
+-         // RotMG grays its whole screen behind a dialog, the side panel too: not over Doom.
+-         if (DialogsView.instance != null) DialogsView.instance.backdropHidden = viewing;
+-         if (PopupView.instance != null) PopupView.instance.backdropHidden = viewing;
++         // RotMG grays its whole screen behind a dialog, the side panel too, over Doom as well
++         // (Ryan, 2026-11-18; Doom dims its own view the same, `modal`). Behind the dialog
++         // RotMG's top-down game isn't drawn while Doom shows: it showed round the dialog's
++         // edges and corners, which aren't square (mapHidden).
++         if (DialogsView.instance != null) DialogsView.instance.backdropHidden = false;
++         if (PopupView.instance != null) PopupView.instance.backdropHidden = false;
+          if (!want && dialogShifted)
+          {
+             dialogShifted = false;
+@@ -730,6 +733,13 @@ package romtg
+                modalSent = modal;
+                send(modal);
+             }
++            // A dialog or a menu over Doom: RotMG's own top-down game hidden behind it (its
++            // window shows only where they are; round their edges the game showed).
++            var hideMap:Boolean = viewing && (modal != "modal 0" || mr != null);
++            if (map.gs_ != null && map.gs_.map != null && hideMap == map.gs_.map.visible)
++            {
++               map.gs_.map.visible = !hideMap;
++            }
+          }
+          if (viewing)
+          {
+@@ -1130,6 +1140,10 @@ package romtg
+                Parameters.data_.cameraAngle = turned;
+                hideOwnHud(false);
+                HudWindow.hide();
++               if (map != null && map.gs_ != null && map.gs_.map != null)
++               {
++                  map.gs_.map.visible = true;   // (hidden behind a dialog over Doom)
++               }
+             }
+             else if (viewing && !was)
+             {

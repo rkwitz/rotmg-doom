@@ -1,0 +1,37 @@
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index 799e151..75f8a6d 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -255,8 +255,10 @@ package romtg
+          {
+             return;
+          }
+-         if (text.go_ != map.player_)
++         if (text.go_ != map.player_ || (thirdPerson && viewing))
+          {
++            // Yours too in Doom's third person: over your character, as RotMG shows them
++            // (Ryan, 2026-11-21), not over your health bar in the HUD.
+             if (viewing)
+             {
+                send("dmg " + text.go_.objectId_ + " " + text.color_.toString(16) + " " + oneLine(text.label_));
+@@ -1123,6 +1125,10 @@ package romtg
+             gotoPath.length = 0;
+             firing = false;
+          }
++         else if (parts[0] == "cam" && parts.length >= 2)
++         {
++            thirdPerson = parts[1] == "1";   // Doom's camera behind you (bridge.toggle_camera)
++         }
+          else if (parts[0] == "throw" && parts.length >= 2 && !isNaN(Number(parts[1])))
+          {
+             throwDistance = Number(parts[1]);   // how far Doom's look says to throw (tiles)
+@@ -1203,6 +1209,9 @@ package romtg
+          }
+       }
+ 
++      /** Doom shows you from behind (third person): your status texts go over you there. */
++      private static var thirdPerson:Boolean = false;
++
+       /** Doom's gotos are dropped until then (ms, getTimer): the server just moved you. */
+       private static var gotoQuietUntil:int = 0;
+       private static const GOTO_QUIET_MS:int = 300;

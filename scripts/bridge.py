@@ -50,6 +50,7 @@ BASE_PX = 8                # RotMG draws objects at their picture's own pixel si
 # and health bars, 2026-11-12.)
 LIFT_TILES = 0.02
 OWN_SHOT_SCALE = 0.55      # your own projectiles, against RotMG's size for them (see describe)
+OWN_SHOT_AHEAD = 0.8       # third person: your shots drawn this many tiles further along (see shot_at)
 DOOM_EFFECTS = ("Fountain",)   # RotMG particle effects Doom draws (romtg_handler.zs `fx`)
 GROUND_OBJECT_TILES = 0.02   # rugs and other pictures lying on the ground: just over the tiles
 RECENTER = 24              # tiles from the origin before everything moves back
@@ -188,9 +189,16 @@ class Bridge:
         self.modal = False            # `modal`: a RotMG dialog is open...
         self.modal_rect: tuple[int, int, int, int] | None = None   # ...and where
         self.modal_changed = False
+        # RotMG's key bindings for what the swapper takes in Doom (`binds`), and a count that
+        # goes up with every new set, for duo.apply_binds.
+        self.binds: dict[str, int] = {}
+        self.binds_seq = 0
         self.controlling = False
         self.weapon = -1
-        self.me = -1        # your own object id: you are Doom's camera, never a sprite
+        self.me = -1        # your own object id: you are Doom's camera, a sprite only in third person
+        # Doom's third-person camera (C, or the camera button in RotMG's side panel; Ryan
+        # 2026-11-20): your own character is then drawn too, over Doom's player (`selfid`).
+        self.camera = False
         self.viewing = False
         self.quest: list | None = None   # [x, y, hp, max, name] in tiles, or None
         self.cash = "cash 0 0"
@@ -267,11 +275,21 @@ class Bridge:
         did = self.new_id()
         self.shown[key] = did
         self.to_doom(line.format(id=did))
+        if key == ("o", self.me):
+            # Doom keeps this one on its player (third person), seen from behind if it has a back.
+            # (and how wide your character is drawn, Doom units: your health bar under it is as wide)
+            # (how wide the figure in your picture is, and how tall the picture: Doom units; your
+            # health bar under you is as wide as the figure, below it as RotMG puts it)
+            me_look = self.look(self.me) or {}
+            me_sc = self.figure(me_look, self.objs[self.me][3])[0] if me_look and self.scale else 0
+            me_width = me_sc * me_look.get("px", 8) if me_look else 0
+            me_height = me_sc * me_look.get("py", me_look.get("px", 8)) if me_look else 0
+            self.to_doom(f"selfid {did} {1 if me_look.get('back') else 0} {me_width:.1f} {me_height:.1f}")
         if key[0] == "o" and self.objs[key[1]][4] and not self.is_wall(key[1]):
             self.to_doom(f"hp {did} {self.objs[key[1]][4][0]} {self.objs[key[1]][4][1]}")
         if key[0] == "o" and key[1] in self.anims and not self.hallucinating and \
                 (self.look(key[1]) or {}).get("anim"):
-            self.to_doom(f"an {did} {self.anims[key[1]][0]} {self.anims[key[1]][1]:.0f}")
+            self.to_doom(f"an {did} {self.anims[key[1]][0]} {self.anims[key[1]][1]:.0f} {self.anims[key[1]][2]}")
         if key[0] == "o" and key[1] in self.names:
             self.to_doom(f"nm {did} {self.names[key[1]][0]} {self.names[key[1]][1]}")
         if key[0] == "j":
@@ -337,7 +355,7 @@ class Bridge:
             if not info:
                 return None
             info = self.variant(info, key[1])
-            x, y = self.doom_xy(shot[1], shot[2])
+            x, y = self.doom_xy(*self.shot_at(shot))
             # RotMG's own size for it (projectiles are drawn like characters, by their Size), but
             # yours a good deal smaller: they start right at your eye, where RotMG's top-down view
             # never puts them, and covered the view (Ryan, 2026-11-13).
@@ -415,6 +433,14 @@ class Bridge:
         info = self.objects_xml.get(obj[0]) if obj else None
         return bool(info and info.get("wall"))
 
+    def shot_at(self, shot: list) -> tuple[float, float]:
+        """Where a shot is drawn (tiles). Yours, in third person, a little further along its way:
+        they start where RotMG has you, a step behind where Doom draws you while you walk, so
+        they flew out from inside your own picture (Ryan, 2026-11-20)."""
+        if self.camera and len(shot) > 6 and shot[4] and shot[6] is not None:
+            return (shot[1] + math.cos(shot[6]) * OWN_SHOT_AHEAD, shot[2] + math.sin(shot[6]) * OWN_SHOT_AHEAD)
+        return shot[1], shot[2]
+
     def lift(self, key: tuple) -> float:
         """The height a shown upright thing stands at, for `mv`."""
         if key[0] == "j":
@@ -434,6 +460,10 @@ class Bridge:
                 if d <= FAR_SIGHT * FAR_SIGHT and (cx + dx, cy + dy) in self.tiles:
                     keys.add(("t" if d <= SIGHT * SIGHT else "ft", cx + dx, cy + dy))
         for oid, obj in self.objs.items():
+            if oid == self.me:
+                if self.camera:
+                    keys.add(("o", oid))   # always: Doom keeps it on you (its place here is old)
+                continue
             if self.in_sight(obj[1], obj[2], SIGHT):
                 keys.add(("o", oid))
             elif self.in_sight(obj[1], obj[2]) and self.objects_xml.get(obj[0], {}).get("static"):
@@ -511,6 +541,7 @@ class Bridge:
         self.next_id = 0
         self.to_doom("clear")
         self.to_doom(f"ctl {1 if self.controlling else 0}")
+        self.to_doom(f"cam {1 if self.camera else 0}")
         self.refresh()
         if self.player and self.scale:
             self.to_doom("p %.2f %.2f" % self.doom_xy(*self.player))
@@ -560,7 +591,7 @@ class Bridge:
                 shot = self.shots.get(int(part[1]))
                 if shot is not None:
                     shot[1], shot[2] = float(part[2]), float(part[3])
-                    self.place(("j", int(part[1])), shot[1], shot[2])
+                    self.place(("j", int(part[1])), *self.shot_at(shot))
             elif kind == "t" and len(part) >= 4:
                 x, y, t = int(part[1]), int(part[2]), int(part[3])
                 old = self.tiles.get((x, y))
@@ -588,6 +619,9 @@ class Bridge:
                 self.to_doom(line)   # your weapon went off: Doom animates it in your hand
             elif kind == "log":
                 log("client: " + line[4:])
+            elif kind == "myhp" and len(part) >= 3:
+                # Your health (third person): the bar under your own character in Doom.
+                self.health(self.me, int(part[1]), int(part[2]))
             elif kind == "dmg" and len(part) >= 4:
                 # A status text over something else (the damage you do, mostly): over it in Doom.
                 key = ("o", int(part[1]))
@@ -608,14 +642,22 @@ class Bridge:
                 self.tip_changed = True
             elif kind == "me" and len(part) >= 2:
                 self.me = int(part[1])
-                self.objs.pop(self.me, None)
+                # On a new map your object can come before this line and be shown as anyone
+                # else's (standing where you arrived, Ryan 2026-11-21): shown again, as you.
                 self.hide(("o", self.me))
+                if self.camera and self.me in self.objs:
+                    self.show(("o", self.me))
+                self.to_client(f"cam {1 if self.camera else 0}")
             elif kind == "o" and len(part) >= 5:
                 oid = int(part[1])
-                if oid == self.me:
-                    return
                 size = float(part[5]) if len(part) >= 6 else 100.0
                 self.objs[oid] = [int(part[2]), float(part[3]), float(part[4]), size, None]
+                if oid == self.me:
+                    # You: kept (your picture, for third person), drawn only then.
+                    self.hide(("o", oid))
+                    if self.camera:
+                        self.show(("o", oid))
+                    return
                 self.hide(("o", oid))
                 self.hide(("fo", oid))
                 if self.in_sight(float(part[3]), float(part[4]), SIGHT):
@@ -656,6 +698,8 @@ class Bridge:
                 self.send_quest()
             elif kind == "swap":
                 self.swap_requested = True
+            elif kind == "camtoggle":
+                self.toggle_camera()   # the camera button in RotMG's side panel
             elif kind == "spd" and len(part) >= 2:
                 # Your walking speed now, for Doom to walk you at: tiles/s to Doom units/s
                 # (sent again with the scale, see send_scale).
@@ -687,6 +731,22 @@ class Bridge:
                     s = self.scale
                     self.to_doom(f"ef {part[1]} {tx:.1f} {ty:.1f} {ax:.1f} {ay:.1f} {bx:.1f} {by:.1f} "
                                  f"{x1 * s:.1f} {x2 * s:.1f} {part[7]} {part[8]} {1 if target == self.me else 0}")
+            elif kind == "binds":
+                binds = {}
+                for pair in part[1:]:
+                    name, _, code = pair.partition("=")
+                    if code.isdigit():
+                        binds[name] = int(code)
+                if binds != self.binds:
+                    self.binds = binds
+                    self.binds_seq += 1
+            elif kind == "throwaim" and len(part) >= 2:
+                # Space held with a thrown ability: Doom draws its arc and landing spot
+                # (`throwaim 1 MAX_TILES RADIUS_TILES`, `throwaim 0`), in Doom units.
+                if part[1] == "1" and len(part) >= 4 and self.scale:
+                    self.to_doom(f"throwaim 1 {float(part[2]) * self.scale:.1f} {float(part[3]) * self.scale:.1f}")
+                else:
+                    self.to_doom("throwaim 0")
             elif kind == "cond" and len(part) >= 3:
                 # Your status effects: Doom draws blind, drunk, paused and swaps keys when
                 # confused; hallucinating, every creature looks like some other one (here).
@@ -711,10 +771,11 @@ class Bridge:
                 oid = int(part[1])
                 obj = self.objs.get(oid)
                 if obj is not None:
-                    obj_anim = (part[2], -math.degrees(float(part[3])))
+                    # (action, Doom yaw, ms for its two frames as RotMG plays them: 0 = Doom's default)
+                    obj_anim = (part[2], -math.degrees(float(part[3])), int(part[4]) if len(part) >= 5 and part[4].isdigit() else 0)
                     self.anims[oid] = obj_anim
                     if ("o", oid) in self.shown and (self.look(oid) or {}).get("anim") and not self.hallucinating:
-                        self.to_doom(f"an {self.shown[('o', oid)]} {obj_anim[0]} {obj_anim[1]:.0f}")
+                        self.to_doom(f"an {self.shown[('o', oid)]} {obj_anim[0]} {obj_anim[1]:.0f} {obj_anim[2]}")
             elif kind == "heal" and len(part) >= 3:
                 # A character under Healing (sparkles round it): you, or a shown object.
                 oid = int(part[1])
@@ -769,6 +830,9 @@ class Bridge:
                 rect = tuple(int(v) for v in part[2:6]) if self.modal and len(part) >= 6 else None
                 if self.modal != was or rect != self.modal_rect:
                     self.modal_changed = True
+                if self.modal != was:
+                    # Doom dims its view behind it, as RotMG grays the screen (Ryan, 2026-11-18).
+                    self.to_doom(f"modal {1 if self.modal else 0}")
                 self.modal_rect = rect
         except (ValueError, IndexError):
             pass
@@ -842,6 +906,19 @@ class Bridge:
         self.to_client(f"view {1 if doom else 0}")
 
     @_locked
+    def toggle_camera(self) -> None:
+        """Doom's camera: first person (your eyes) <-> third person (over your character, which
+        is drawn then)."""
+        self.camera = not self.camera
+        self.to_doom(f"cam {1 if self.camera else 0}")
+        self.to_client(f"cam {1 if self.camera else 0}")   # your status texts go over you then
+        if self.camera and self.me in self.objs:
+            self.show(("o", self.me))
+        else:
+            self.hide(("o", self.me))
+        log(f"camera: {'third' if self.camera else 'first'} person")
+
+    @_locked
     def set_panel(self, on: bool) -> None:
         """Tab out of Doom: Doom greys out and says how to come back."""
         self.to_doom(f"panel {1 if on else 0}")
@@ -849,6 +926,9 @@ class Bridge:
     @_locked
     def act(self, name: str) -> None:
         """A RotMG key pressed in Doom (see duo.py ACTIONS)."""
+        if name == "camera":
+            self.toggle_camera()   # the camera key (duo.CAMERA_VKS): Doom's, not RotMG's
+            return
         if self.controlling:
             self.to_client(f"act {name}")
 
@@ -868,6 +948,9 @@ class Bridge:
             elif part[0] == "fire" and len(part) >= 3 and self.controlling:
                 # Doom's angle is degrees anticlockwise with y up; RotMG's radians with y down.
                 self.to_client(f"fire {1 if part[1] == '1' else 0} {-math.radians(float(part[2])):.4f}")
+            elif part[0] == "throw" and len(part) >= 2 and self.scale:
+                # How far to throw the aimed ability, Doom units to tiles.
+                self.to_client(f"throw {float(part[1]) / self.scale:.2f}")
             elif part[0] == "hello":
                 self.resend_all()
         except ValueError:

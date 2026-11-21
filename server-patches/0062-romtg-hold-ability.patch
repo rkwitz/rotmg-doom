@@ -1,0 +1,78 @@
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index e7ef263..05ea2d8 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -1085,6 +1085,10 @@ package romtg
+          if (parts[0] == "ctl")
+          {
+             controlling = parts[1] == "1";
++            if (!controlling)
++            {
++               endSpecial(map != null ? map.player_ : null);   // Space held as you left Doom
++            }
+             if (controlling)
+             {
+                HudWindow.tooltip(null, false);   // back in Doom: no tooltip left hanging over it
+@@ -1172,6 +1176,34 @@ package romtg
+          }
+       }
+ 
++      /** The ability key is held down (useSpecial:down went through, :up not yet). */
++      private static var specialHeld:Boolean = false;
++
++      private static function abilityX() : Number
++      {
++         return Math.cos(aim - Parameters.data_.cameraAngle) * ABILITY_REACH;
++      }
++
++      private static function abilityY() : Number
++      {
++         return Math.sin(aim - Parameters.data_.cameraAngle) * ABILITY_REACH;
++      }
++
++      /** Let go of a held ability (the ninja's star flies now). Also when Doom loses the
++       *  controls mid-hold, as no release will come from it then. */
++      private static function endSpecial(player:Player) : void
++      {
++         if (!specialHeld)
++         {
++            return;
++         }
++         specialHeld = false;
++         if (player != null)
++         {
++            player.useAltWeapon(abilityX(), abilityY(), UseType.END_USE);
++         }
++      }
++
+       /** RotMG's own key for NAME, as if pressed: potions, nexus, inventory slots, interact
+        *  (portals)... all go through the player's own bindings and the client's own checks.
+        *  The ability aims where Doom looks. */
+@@ -1201,11 +1233,22 @@ package romtg
+          }
+          if (name == "useSpecial")
+          {
+-            var screen:Number = aim - Parameters.data_.cameraAngle;
+-            var xS:Number = Math.cos(screen) * ABILITY_REACH;
+-            var yS:Number = Math.sin(screen) * ABILITY_REACH;
+-            player.useAltWeapon(xS, yS, UseType.START_USE);
+-            player.useAltWeapon(xS, yS, UseType.END_USE);
++            // Held as in RotMG (MapUserInput): START_USE on the press, END_USE on the release,
++            // each aimed where Doom looks then. The ninja's star (MultiPhase) starts on the press
++            // and is thrown on the release; Doom pressed and let go at once, so it couldn't be
++            // held (Ryan, 2026-11-17). Other abilities act on the press only, as before.
++            if (half == "up")
++            {
++               endSpecial(player);
++            }
++            else if (!specialHeld)
++            {
++               specialHeld = player.useAltWeapon(abilityX(), abilityY(), UseType.START_USE);
++               if (specialHeld && half == null)
++               {
++                  endSpecial(player);   // a plain press (no :down/:up): over at once
++               }
++            }
+             return;
+          }
+          if (!Parameters.data_.hasOwnProperty(name) || !(Parameters.data_[name] is int || Parameters.data_[name] is uint))

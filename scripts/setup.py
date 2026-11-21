@@ -300,6 +300,8 @@ def cmd_build_mod(args) -> bool:
         pk3.writestr(f"maps/{flatmap.MAP_NAME}.wad", flatmap.wad())
         pk3.writestr("textures/RTBLACK.png", flatmap.black_png())
         pk3.writestr("textures/RTWHITE.png", flatmap.white_png())
+        # Which pixels of each sprite are solid (romtg_handler.zs Covers).
+        pk3.writestr("romtgmsk.txt", assets.sprite_masks(REPO / "build" / "sprites"))
     ok(f"{out} ({len(sources) + 3} files, map {flatmap.MAP_NAME})")
     return True
 
@@ -484,8 +486,12 @@ def cmd_client(args) -> bool:
         raise SetupError("server/TK-Client missing; run `setup.py server` first")
     params = (src / "src/com/company/assembleegameclient/parameters/Parameters.as").read_text(encoding="utf-8")
     local = (src / "src/kabam/rotmg/application/impl/LocalhostSetup.as").read_text(encoding="utf-8")
-    if "LOCAL_HOST:Boolean = true" not in params or '"http://127.0.0.1:2000"' not in local:
-        raise SetupError("TK-Client is not set to localhost-only; refusing to build it")
+    # The client talks to this PC, or to the host in a server.txt next to it (patch 0021, for
+    # the friend demo): never to a built-in address of an official server.
+    official = ("realmofthemadgod", "appspot", "decagames", "tkr.gg")
+    if "LOCAL_HOST:Boolean = true" not in params or 'host_ = "127.0.0.1"' not in local \
+            or any(name in local.lower() for name in official):
+        raise SetupError("TK-Client is not set to this PC (or server.txt's host); refusing to build it")
     sdk = find_air_sdk()
     if not sdk:
         raise SetupError("Harman AIR SDK not found; extract it to <workspace>/tools/AIRSDK_<version> "

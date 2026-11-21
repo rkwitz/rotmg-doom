@@ -48,11 +48,34 @@ class RomtgHandler : StaticEventHandler
 {
 	const MAX_LINES_PER_TIC = 20000;
 	const RESEND_TICS = 10;
+	const THROW_PITCH_NEAR = 35.0;   // looking this far down: a throw lands at your feet
+	const THROW_PITCH_FAR = -25.0;   // looking this far up: as far as it goes
+	const SELF_BAR_WIDTH = 0.94;     // third person: the green of your bar against your picture's width (1.0 too wide, 0.88 narrow; Ryan)
+	const SELF_BAR_GAP = 0.1;        // ...its top this much of your picture's height below your feet (RotMG: 4 px under 40)
+	const CAM_DIST_TILES = 4.5;      // third person: the camera this far back along your look
+	const CAM_PITCH = 15.0;          // ...looking down at you at this angle, fixed: low, behind you (Ryan, 2026-11-20)
+	const CAM_PITCH_MIN = 15.0;      // the mouse's up and down then only aims throws, between
+	const CAM_PITCH_MAX = 80.0;      // ...these
 
 	Array<Actor> things;
 	Vector2 lastMove;
 	int lastMoveAt;
 	int lastFire, lastAim, lastFireAt;
+	// A thrown ability aimed with Space held (`throwaim 1 MAX RADIUS`, Doom units): how far it
+	// goes follows your look up and down, sent as `throw D`; DrawThrowArc shows where it lands.
+	// Third person (`cam 1`, C or RotMG's camera button; Ryan 2026-11-20): the camera behind and
+	// above you, looking down at your own character, which the bridge then sends as a thing like
+	// any other (`selfid` says which), kept on Doom's player here.
+	bool thirdPerson, camSet, selfBack;
+	Map<String, String> spriteMask;   // sprite lump -> "W H HEX": its solid pixels (romtgmsk.txt, assets.py sprite_masks)
+	double selfWidth, selfHeight;        // how wide your character is drawn (Doom units): your bar's width in third person
+	int selfId;
+	double throwPitch;      // third person: the look up and down the mouse makes, for throws only
+	Vector2 selfWas;
+	double pitchMin, pitchMax;   // Doom's own look limits, put back after third person
+	bool throwAim;
+	double throwMax, throwRadius, throwSent;
+	int throwSentAt;
 	string weaponSprite;
 	bool weaponFlip;
 	string weaponFrame;
@@ -77,6 +100,7 @@ class RomtgHandler : StaticEventHandler
 	Array<Actor> bars;              // their health bars, by thing id
 	Array<int> barIds;              // the ids that have one
 	bool panel;                     // Tab: RotMG's side panel has the mouse
+	bool modalUp;                   // `modal`: a RotMG dialog is open over Doom (dimmed behind it)
 	// Status texts over things (damage numbers), for RenderOverlay.
 	Array<int> floatColor, floatAt;
 	Array<string> floatText;
@@ -113,6 +137,7 @@ class RomtgHandler : StaticEventHandler
 	const PATTERN_TILES = 44;       // the faint ground pattern reaches this far (past FADE_TO)
 	const PATTERN_ALPHA = 0.3;
 	int atkAt, atkTics;             // your last shot, and the time to the next (atk)
+	int atkMs;                      // ...that time in ms, for your attack frames in third person
 	int weaponSlot;                 // RotMG's SlotType: sword 1, dagger 2, bow 3, wand 8, staff 17, katana 24
 	// RTGROUND's size (ANIMDEFS): 256 tiles of 16 pixels, wrapping. 16, not RotMG's 8, so
 	// moving water slides in half-pixel steps (at 8 it stepped a couple of times a second).
@@ -184,6 +209,7 @@ class RomtgHandler : StaticEventHandler
 	// Characters' animation (`an`), by thing id: action (0 stand, 1 walk, 2 attack; -1 none),
 	// facing (Doom degrees), since which tic. Frames A stand, F G walk, H I attack (assets.py).
 	Array<int> animAct, animSince;
+	Array<int> animMs;       // ms its two frames take, as RotMG plays them (`an`'s 4th field; 0: the defaults below)
 	Array<double> animYaw;
 	Array<int> trailColor, trailTics;
 	Array<double> trailShare;
@@ -204,6 +230,30 @@ class RomtgHandler : StaticEventHandler
 	const FOUNTAIN_HEIGHT = 0.33;   // the spray's arc against RotMG's numbers (see Fountains)
 	const FOUNTAIN_SPEED = 1.8;     // and its pace: same arc, played faster (Ryan: too slow)        // upright things stand this far up (bridge.py's LIFT_TILES)
 
+	// Every sprite's solid pixels, from romtgmsk.txt in the mod (once).
+	void LoadMasks()
+	{
+		if (spriteMask.CountUsed() > 0)
+		{
+			return;
+		}
+		int lump = Wads.CheckNumForFullName("romtgmsk.txt");
+		if (lump < 0)
+		{
+			return;
+		}
+		Array<String> lines;
+		Wads.ReadLump(lump).Split(lines, "\n", TOK_SKIPEMPTY);
+		for (int i = 0; i < lines.Size(); i++)
+		{
+			int sp = lines[i].IndexOf(" ");
+			if (sp > 0)
+			{
+				spriteMask.Insert(lines[i].Left(sp), lines[i].Mid(sp + 1));
+			}
+		}
+	}
+
 	override void OnRegister()
 	{
 		// To the console and log only, not on screen.
@@ -212,6 +262,7 @@ class RomtgHandler : StaticEventHandler
 
 	override void WorldLoaded(WorldEvent e)
 	{
+		LoadMasks();
 		TextureID ground = TexMan.CheckForTexture("RTGROUND", TexMan.Type_Any);
 		for (int i = 0; i < level.sectors.Size(); i++)
 		{
@@ -228,6 +279,7 @@ class RomtgHandler : StaticEventHandler
 		farTiles.Clear();
 		lastMoveAt = -1000;
 		lastFireAt = -1000;
+		selfId = -1;
 	}
 
 	// Doom's whole map is one sector (scripts/flatmap.py): a white floor, far walls and ceiling,
@@ -329,13 +381,29 @@ class RomtgHandler : StaticEventHandler
 	// Each shot's picture turned (roll) to point where it's going on your screen: its place and
 	// a step along its flight both seen from your eye, the line between them is its heading
 	// there; less the way the picture itself points; plus its spin, as RotMG spins it.
+	// Where Doom's view is: your eye, or in third person CAM_DIST_TILES back along your look
+	// (as SetViewPos's offset, turned by your yaw and pitch, puts it). Shots are turned and
+	// creatures flipped for this point, so they're right from the camera (Ryan, 2026-11-21).
+	Vector3 ViewFrom(PlayerInfo p)
+	{
+		Vector3 from = (p.mo.pos.xy, p.viewz);
+		if (!thirdPerson)
+		{
+			return from;
+		}
+		double tile = eye > 0 ? eye / (0.8 * 0.85) : 64;
+		double back = tile * CAM_DIST_TILES;
+		double yw = p.mo.angle, pt = p.mo.pitch;
+		return from - (cos(pt) * cos(yw), cos(pt) * sin(yw), -sin(pt)) * back;
+	}
+
 	void AimShots(PlayerInfo p)
 	{
 		if (p.mo == null || shotAimed.Size() == 0)
 		{
 			return;
 		}
-		Vector3 eyePos = (p.mo.pos.xy, p.viewz);
+		Vector3 eyePos = ViewFrom(p);   // the camera: your eye, or behind you in third person
 		double yaw = p.mo.angle, pitch = p.mo.pitch;
 		for (int i = 0; i < shotAimed.Size() && i < things.Size(); i++)
 		{
@@ -423,7 +491,7 @@ class RomtgHandler : StaticEventHandler
 		{
 			return;
 		}
-		Vector3 eyePos = (p.mo.pos.xy, p.viewz);
+		Vector3 eyePos = ViewFrom(p);
 		double yaw = p.mo.angle, pitch = p.mo.pitch;
 		for (int i = 0; i < animAct.Size() && i < things.Size(); i++)
 		{
@@ -433,14 +501,18 @@ class RomtgHandler : StaticEventHandler
 				continue;
 			}
 			int age = level.maptime - animSince[i];
+			// RotMG's timing: its two frames over the period the client sent (an attack over its
+			// rate of fire, walking by speed), from when the action started.
+			int ms = i < animMs.Size() && animMs[i] > 0 ? animMs[i] : (animAct[i] == 2 ? 300 : 400);
+			bool second = FrameHalf(age, ms);
 			int frame = 0;
 			if (animAct[i] == 2)
 			{
-				frame = (age / 5) % 2 == 0 ? 7 : 8;    // H, I
+				frame = second ? 8 : 7;    // H, I
 			}
 			else if (animAct[i] == 1)
 			{
-				frame = (age / 7) % 2 == 0 ? 5 : 6;    // F, G
+				frame = second ? 6 : 5;    // F, G
 			}
 			t.frame = frame;
 			Vector2 a = ViewDir(t.pos - eyePos, yaw, pitch);
@@ -450,6 +522,14 @@ class RomtgHandler : StaticEventHandler
 				t.bSPRITEFLIP = b.x < a.x;
 			}
 		}
+	}
+
+	// Whether TICS into an animation whose two frames take MS (as RotMG's p = t % MS / MS,
+	// frame int(p * 2)) shows its second frame.
+	static bool FrameHalf(int tics, int ms)
+	{
+		double t = tics * 1000.0 / TICRATE;
+		return (t % max(ms, 1)) * 2 >= ms;
 	}
 
 	// Where D (from your eye) lands on the screen, as x right and y up over depth; far off if
@@ -1361,7 +1441,10 @@ class RomtgHandler : StaticEventHandler
 	}
 
 	// Health bars stay at their enemy's feet, a little towards you so they're never behind it.
-	void PlaceBars(Actor mo)
+	// Health bars at their things' feet, a little toward the camera so the bar shows in front
+	// of the feet. Yours in third person further: below your character, as RotMG draws it under
+	// you (it covered your feet, Ryan 2026-11-21).
+	void PlaceBars(Actor mo, Vector3 view)
 	{
 		double tile = eye > 0 ? eye / (0.8 * 0.85) : 64;
 		for (int i = barIds.Size() - 1; i >= 0; i--)
@@ -1376,9 +1459,13 @@ class RomtgHandler : StaticEventHandler
 				barIds.Delete(i);
 				continue;
 			}
-			Vector2 to = mo.pos.xy - t.pos.xy;
+			// Yours in third person is drawn by DrawSelfBar every frame instead (placed here once a
+			// tic it lagged behind as you turned, Ryan 2026-11-21).
+			bar.bINVISIBLE = thirdPerson && id == selfId;
+			Vector2 to = view.xy - t.pos.xy;
 			double len = to.Length();
-			Vector2 toward = len > 0.001 ? to / len * min(tile * 0.3, len * 0.5) : (0, 0);
+			double ahead = tile * 0.3;
+			Vector2 toward = len > 0.001 ? to / len * min(ahead, len * 0.5) : (0, 0);
 			Vector3 at = (t.pos.x + toward.x, t.pos.y + toward.y, max(1.0, tile * LIFT_TILES));
 			bar.SetOrigin(at, (at.xy - bar.pos.xy).Length() < 2 * tile);
 		}
@@ -1444,7 +1531,10 @@ class RomtgHandler : StaticEventHandler
 		MotionStats(p.mo);
 		SendMove(p);
 		SendFire(p);
-		PlaceBars(p.mo);
+		SendThrow(p);
+		Camera(p);
+		KeepSelf(p);
+		PlaceBars(p.mo, ViewFrom(p));
 		Fountains();
 		Sink(p);
 		// Moving ground in sight: the floor is redrawn every tic to move it smoothly.
@@ -1478,6 +1568,102 @@ class RomtgHandler : StaticEventHandler
 				floatY[i] = floatThing[i].pos.y;
 				floatZ[i] = TextBase(floatThing[i]);
 			}
+		}
+	}
+
+	// How far a throw goes for a look PITCH (degrees, down positive): a tile at your feet
+	// looking well down, the ability's farthest looking up, evenly between (Ryan, 2026-11-18:
+	// "the higher you look the further it throws").
+	clearscope double ThrowDistance(double pitch)
+	{
+		double tile = eye > 0 ? eye / (0.8 * 0.85) : 64;
+		// In third person you always look down: near = looking nearly straight down at yourself.
+		double nearP = thirdPerson ? CAM_PITCH_MAX : THROW_PITCH_NEAR;
+		double farP = thirdPerson ? CAM_PITCH_MIN : THROW_PITCH_FAR;
+		double t = clamp((nearP - pitch) / (nearP - farP), 0, 1);
+		return tile + (max(throwMax, tile) - tile) * t;
+	}
+
+	// First or third person: Doom's view moved back along your look (SetViewPos, relative to
+	// your angles), your look kept pointing down at yourself.
+	void Camera(PlayerInfo p)
+	{
+		if (thirdPerson)
+		{
+			double tile = eye > 0 ? eye / (0.8 * 0.85) : 64;
+			// The camera's tilt never moves: Doom's look limits pinned to it, so neither the tic
+			// (CheckPitch) nor the frames between (the mouse shown at once, clamped to the same
+			// limits) can tilt it; it was nudged and snapped back (Ryan, 2026-11-21). The mouse's
+			// up and down (this tic's cmd.pitch, up positive) only aims throws.
+			if (!camSet)
+			{
+				pitchMin = p.MinPitch;
+				pitchMax = p.MaxPitch;
+			}
+			p.MinPitch = CAM_PITCH;
+			p.MaxPitch = CAM_PITCH;
+			throwPitch = clamp(throwPitch - p.cmd.pitch * (360. / 65536.), CAM_PITCH_MIN, CAM_PITCH_MAX);
+			p.mo.pitch = CAM_PITCH;
+			p.mo.SetViewPos((-tile * CAM_DIST_TILES, 0, 0), 0);
+			camSet = true;
+		}
+		else if (camSet)
+		{
+			p.mo.SetViewPos((0, 0, 0), 0);
+			p.MinPitch = pitchMin;
+			p.MaxPitch = pitchMax;
+			camSet = false;
+		}
+	}
+
+	// Your own character's picture stands where Doom's player is, every tic (the bridge's idea of
+	// where you are is RotMG's, a little behind Doom's).
+	void KeepSelf(PlayerInfo p)
+	{
+		if (!thirdPerson || selfId < 0 || selfId >= things.Size() || things[selfId] == null)
+		{
+			return;
+		}
+		Actor t = things[selfId];
+		Vector3 to = (p.mo.pos.x, p.mo.pos.y, t.pos.z);
+		t.SetOrigin(to, (to.xy - t.pos.xy).Length() < 64);
+		// Animated as RotMG animates you (the client sends no `an` for you): walking while you
+		// move, attacking while you fire, seen from behind (the camera is behind you): RotMG's
+		// back frames J-N if it has them (assets.py back_frames), else its side ones.
+		bool moving = (p.mo.pos.xy - selfWas).Length() > 0.5;
+		selfWas = p.mo.pos.xy;
+		bool firing = control && (p.cmd.buttons & BT_ATTACK);
+		int k = 0;
+		if (firing)
+		{
+			// Over your weapon's rate of fire (`atk`), from your last shot, as RotMG plays it.
+			k = FrameHalf(level.maptime - atkAt, atkMs > 0 ? atkMs : 300) ? 2 : 1;
+		}
+		else if (moving)
+		{
+			// RotMG: 3.5 / speed (tiles per ms) for the two frames.
+			double tile = eye > 0 ? eye / (0.8 * 0.85) : 64;
+			double tilesPerSec = walkSpeed > 0 ? walkSpeed / tile : 5;
+			k = FrameHalf(level.maptime, int(3500 / tilesPerSec)) ? 4 : 3;
+		}
+		static const int BACK[] = { 9, 12, 13, 10, 11 };    // J; M, N; K, L
+		static const int SIDE[] = { 0, 7, 8, 5, 6 };        // A; H, I; F, G
+		t.frame = selfBack ? BACK[k] : SIDE[k];
+		t.bSPRITEFLIP = false;
+	}
+
+	void SendThrow(PlayerInfo p)
+	{
+		if (!throwAim || p.mo == null)
+		{
+			return;
+		}
+		double d = ThrowDistance(thirdPerson ? throwPitch : p.mo.pitch);
+		if (abs(d - throwSent) > 1 || level.maptime - throwSentAt >= RESEND_TICS)
+		{
+			throwSent = d;
+			throwSentAt = level.maptime;
+			RomtgBridge.Send(String.Format("throw %.1f", d));
 		}
 	}
 
@@ -1555,7 +1741,7 @@ class RomtgHandler : StaticEventHandler
 			return;
 		}
 		DrawRealmHud(e);
-		if (weaponSprite.Length() == 0 || weaponSprite == "-")
+		if (thirdPerson || weaponSprite.Length() == 0 || weaponSprite == "-")
 		{
 			return;
 		}
@@ -1645,17 +1831,465 @@ class RomtgHandler : StaticEventHandler
 		double size = max(1.0, h / 540.0);
 		DrawNameTags(e, w, h, size);
 		DrawFloatingTexts(e, w, h, size);
+		DrawThrowArc(e, w, h, size);
+		DrawSelfBar(e, w, h);
 		if (hasQuest)
 		{
-			DrawQuestMarker(f, w, h * 0.09, size);
+			DrawQuestMarker(f, w, h * 0.105, size);   // a little lower: clear of the boss's icon (Ryan, 2026-11-21)
 		}
-		if (panel)
+		if (modalUp)
+		{
+			// A RotMG dialog over Doom (the potion storage...): grayed behind it as RotMG grays
+			// its screen (DialogsView: 0x151515 at 0.6), no "press Tab" line over it.
+			Screen.Dim(0x151515, 0.6, 0, 0, int(w), int(h));
+		}
+		else if (panel)
 		{
 			Screen.Dim(0, 0.45, 0, 0, int(w), int(h));
 			string tell = "Press TAB to return to the game";
 			double big = size * 1.5;
 			Text(f, (w - f.StringWidth(tell) * big) / 2, h * 0.5, tell, 0xFFFFFF, big);
 		}
+	}
+
+	// A thrown ability being aimed: its arc from your hand and a ring where it lands, the
+	// size of what it does there (its radius), on the ground.
+	ui void DrawThrowArc(RenderEvent e, double w, double h, double size)
+	{
+		PlayerInfo p = players[consoleplayer];
+		if (!throwAim || p == null || p.mo == null || eye <= 0)
+		{
+			return;
+		}
+		double tile = eye / (0.8 * 0.85);
+		double hfov = 2 * atan(tan(p.fov / 2) * (w / h) / (4.0 / 3.0));
+		double focal = (w / 2) / tan(hfov / 2);
+		double yaw = e.ViewAngle, pitch = e.ViewPitch;
+		double d = ThrowDistance(thirdPerson ? throwPitch : pitch);
+		double floorZ = p.mo.floorz + 0.5;
+		// From you, not from the camera (in third person it's behind and above you).
+		Vector3 me = p.mo.prev + (p.mo.pos - p.mo.prev) * e.FracTic;
+		Vector3 from = (me.x + cos(yaw) * tile * 0.3, me.y + sin(yaw) * tile * 0.3, me.z + eye - tile * 0.25);
+		Vector3 land = (me.x + cos(yaw) * d, me.y + sin(yaw) * d, floorZ);
+		double peak = tile * 0.2 + d * 0.2;
+		double thick = max(1.0, size * 1.5);
+		int steps = 24;
+		Vector2 last;
+		bool had = false;
+		for (int i = 0; i <= steps; i++)
+		{
+			double s = double(i) / steps;
+			Vector3 pt = from + (land - from) * s;
+			pt.z += 4 * peak * s * (1 - s);
+			Vector2 sp;
+			bool ok;
+			[ok, sp] = ToScreen(pt, e, w, h, focal, yaw, pitch);
+			if (ok && had && i > 1)
+			{
+				// Dashed, fading in from your hand.
+				if (i % 2 == 0)
+				{
+					Screen.DrawThickLine(int(last.x), int(last.y), int(sp.x), int(sp.y), thick, 0xFFE680, int(255 * min(1.0, s * 3)));
+				}
+			}
+			had = ok;
+			last = sp;
+		}
+		double r = max(throwRadius, tile * 0.4);
+		int around = 40;
+		had = false;
+		Vector2 first;
+		bool firstOk = false;
+		for (int i = 0; i <= around; i++)
+		{
+			double a = 360.0 * i / around;
+			Vector3 pt = (land.x + cos(a) * r, land.y + sin(a) * r, floorZ);
+			Vector2 sp;
+			bool ok;
+			[ok, sp] = ToScreen(pt, e, w, h, focal, yaw, pitch);
+			if (ok && had)
+			{
+				Screen.DrawThickLine(int(last.x), int(last.y), int(sp.x), int(sp.y), thick, 0xFFB030, 230);
+			}
+			had = ok;
+			last = sp;
+		}
+		// The spot itself: a small cross where it lands.
+		Vector2 c;
+		bool cok;
+		[cok, c] = ToScreen(land, e, w, h, focal, yaw, pitch);
+		if (cok)
+		{
+			double k = 6 * size;
+			Screen.DrawThickLine(int(c.x - k), int(c.y), int(c.x + k), int(c.y), thick, 0xFFFFFF, 230);
+			Screen.DrawThickLine(int(c.x), int(c.y - k * 0.6), int(c.x), int(c.y + k * 0.6), thick, 0xFFFFFF, 230);
+		}
+	}
+
+	// Your health bar in third person, as RotMG draws it under a character: a dark 42x7 back
+	// and a 40x5 bar going green to red, as wide as your character, just below your feet on
+	// screen. Drawn every frame where you are drawn, so it stays put as you turn and move.
+	ui void DrawSelfBar(RenderEvent e, double w, double h)
+	{
+		PlayerInfo p = players[consoleplayer];
+		if (!thirdPerson || p == null || p.mo == null || eye <= 0 || selfId < 0
+			|| selfId >= thingMax.Size() || thingMax[selfId] <= 0)
+		{
+			return;
+		}
+		double tile = eye / (0.8 * 0.85);
+		double hfov = 2 * atan(tan(p.fov / 2) * (w / h) / (4.0 / 3.0));
+		double focal = (w / 2) / tan(hfov / 2);
+		double yaw = e.ViewAngle, pitch = e.ViewPitch;
+		// Laid out on the screen against your picture as drawn there (at its depth, not the
+		// bar's: measured at the bar's depth it came out wider than you), RotMG's way: the bar
+		// SELF_BAR_GAP of your picture's height below its feet (RotMG: 4 px under a 40 px
+		// figure), the green part as wide as your figure, the dark back round it.
+		Vector3 me = p.mo.prev + (p.mo.pos - p.mo.prev) * e.FracTic;
+		double cellW = selfWidth > 0 ? selfWidth : tile * 0.8;
+		double cellH = selfHeight > 0 ? selfHeight : cellW;
+		Vector2 feet, head;
+		bool ok, ok2;
+		[ok, feet] = ToScreen((me.x, me.y, p.mo.floorz), e, w, h, focal, yaw, pitch);
+		[ok2, head] = ToScreen((me.x, me.y, p.mo.floorz + cellH), e, w, h, focal, yaw, pitch);
+		Vector3 d = (me.x, me.y, p.mo.floorz + cellH / 2) - e.ViewPos;
+		double depth = ViewDepth(d, yaw, pitch);
+		if (!ok || !ok2 || depth < 4)
+		{
+			return;
+		}
+		double fw = cellW * SELF_BAR_WIDTH / depth * focal, fh = fw * 5.0 / 40.0;   // the green
+		double bw = fw * 43.0 / 40.0, bh = fw * 8.0 / 40.0;                         // the back
+		double x = feet.x - bw / 2, y = feet.y + (feet.y - head.y) * SELF_BAR_GAP;
+		double frac = clamp(double(thingHp[selfId]) / thingMax[selfId], 0, 1);
+		// Drawn over the 3D view, so what stands nearer the camera (your pet at your heels, a
+		// player passing in front) is cut out of it, as it would hide a bar in the world (Ryan,
+		// 2026-11-21: it showed over the pet).
+		// Each solid pixel of what stands nearer the camera, as a rectangle on the screen.
+		Array<double> rx0, ry0, rx1, ry1;
+		Covers(e, me, depth, x, y, bw, bh, focal, yaw, pitch, w, h, rx0, ry0, rx1, ry1);
+		// Drawn in slabs across the screen between the rectangles' edges: in each, the bar
+		// minus the rectangles that span it, so only real pixels hide it, partly if partly.
+		Array<double> xs;
+		xs.Push(x);
+		xs.Push(x + bw);
+		for (int i = 0; i < rx0.Size(); i++)
+		{
+			xs.Push(rx0[i]);
+			xs.Push(rx1[i]);
+		}
+		SortDoubles(xs);
+		for (int s = 0; s + 1 < xs.Size(); s++)
+		{
+			double xa = max(xs[s], x), xb = min(xs[s + 1], x + bw);
+			if (xb - xa < 0.01)
+			{
+				continue;
+			}
+			double xm = (xa + xb) / 2;
+			Array<double> ya, yb;   // covered heights in this slab
+			for (int i = 0; i < rx0.Size(); i++)
+			{
+				if (rx0[i] <= xm && rx1[i] >= xm)
+				{
+					ya.Push(ry0[i]);
+					yb.Push(ry1[i]);
+				}
+			}
+			// What of the bar's height isn't covered, top to bottom.
+			double at = y;
+			while (at < y + bh - 0.01)
+			{
+				double upto = y + bh;
+				bool covered = false;
+				for (int i = 0; i < ya.Size(); i++)
+				{
+					if (ya[i] <= at + 0.01 && yb[i] > at + 0.01)
+					{
+						covered = true;
+						at = max(at, yb[i]);
+					}
+				}
+				if (covered)
+				{
+					continue;
+				}
+				for (int i = 0; i < ya.Size(); i++)
+				{
+					if (ya[i] > at && ya[i] < upto)
+					{
+						upto = ya[i];
+					}
+				}
+				int cx = int(xa + 0.5), cy = int(at + 0.5);
+				int cw = int(xb + 0.5) - cx, chh = int(upto + 0.5) - cy;
+				if (cw > 0 && chh > 0)
+				{
+					Screen.SetClipRect(cx, cy, cw, chh);
+					Screen.Dim(0x111111, 0.85, int(x), int(y), max(1, int(bw)), max(1, int(bh)));
+					if (frac > 0)
+					{
+						Screen.Dim(Green2Red(frac), 1.0, int(x + (bw - fw) / 2), int(y + (bh - fh) / 2), max(1, int(fw * frac)), max(1, int(fh)));
+					}
+					Screen.ClearClipRect();
+				}
+				at = upto;
+			}
+		}
+	}
+
+	ui static void SortDoubles(out Array<double> a)
+	{
+		for (int i = 1; i < a.Size(); i++)
+		{
+			double v = a[i];
+			int j = i - 1;
+			while (j >= 0 && a[j] > v)
+			{
+				a[j + 1] = a[j];
+				j--;
+			}
+			a[j + 1] = v;
+		}
+	}
+
+	clearscope static int HexDigit(int ch)
+	{
+		if (ch >= 48 && ch <= 57) return ch - 48;     // 0-9
+		if (ch >= 97 && ch <= 102) return ch - 87;    // a-f
+		return 0;
+	}
+
+	// The solid pixels of upright pictures standing nearer the camera than DEPTH, within a few
+	// tiles of you (ME), that fall on the bar at X, Y (BW x BH): screen rectangles RX0..RX1 x
+	// RY0..RY1. Each pixel placed as Doom draws it: pictures stand upright facing your view's
+	// direction, a texel's corners projected like any point in the world (with the camera
+	// tilted down their top and bottom are at different distances; a flat guess drifted by a
+	// pixel at the feet, Ryan 2026-11-21).
+	ui void Covers(RenderEvent e, Vector3 me, double depth, double x, double y, double bw, double bh,
+		double focal, double yaw, double pitch, double w, double h,
+		out Array<double> rx0, out Array<double> ry0, out Array<double> rx1, out Array<double> ry1)
+	{
+		double tile = eye / (0.8 * 0.85);
+		Vector3 right = (sin(yaw), -cos(yaw), 0);   // the screen's right, in the world
+		double meAhead = (me.x - e.ViewPos.x) * cos(yaw) + (me.y - e.ViewPos.y) * sin(yaw);   // your plane
+		for (int i = 0; i < things.Size(); i++)
+		{
+			Actor t = things[i];
+			if (t == null || i == selfId || t is "RomtgWall" || t.bFLATSPRITE || t.bINVISIBLE
+				|| (t.GetRenderStyle() == STYLE_Translucent && t.alpha < 0.3))
+			{
+				continue;
+			}
+			Vector3 at = t.prev + (t.pos - t.prev) * e.FracTic;
+			if ((at.xy - me.xy).Length() > tile * 4)
+			{
+				continue;
+			}
+			// Pictures stand upright facing the view's direction, so which of two is in front is
+			// which plane is nearer along it: their middles' depths differ with their heights
+			// (a cactus hugged by you counted as behind you, so it didn't hide your bar; Ryan,
+			// 2026-11-21).
+			Vector3 d = at - e.ViewPos;
+			double tdepth = ViewDepth(d, yaw, pitch);
+			if (tdepth < 4 || d.x * cos(yaw) + d.y * sin(yaw) >= meAhead)
+			{
+				continue;
+			}
+			TextureID tex;
+			bool flip;
+			Vector2 sc;
+			[tex, flip, sc] = t.CurState.GetSpriteTexture(0, 0, (0, 0), t.sprite, t.frame);
+			if (!tex.IsValid())
+			{
+				continue;
+			}
+			Vector2 size = TexMan.GetScaledSize(tex);
+			Vector2 off = TexMan.GetScaledOffset(tex);
+			String m = spriteMask.GetIfExists(TexMan.GetName(tex));
+			Array<String> f;
+			m.Split(f, " ");
+			int tw = f.Size() >= 3 ? f[0].ToInt() : 1;
+			int th = f.Size() >= 3 ? f[1].ToInt() : 1;
+			string hex = f.Size() >= 3 ? f[2] : "8";   // no mask: one solid block
+			double texW = size.x / tw, texH = size.y / th;   // a mask pixel, in texture units
+			bool mirror = flip != t.bSPRITEFLIP;
+			// The picture's whole rectangle first: nothing to do if it misses the bar.
+			Vector2 a, b;
+			bool oka, okb;
+			[oka, a] = ToScreen(at + right * (-off.x * t.scale.x) + (0, 0, off.y * t.scale.y), e, w, h, focal, yaw, pitch);
+			[okb, b] = ToScreen(at + right * ((size.x - off.x) * t.scale.x) + (0, 0, (off.y - size.y) * t.scale.y), e, w, h, focal, yaw, pitch);
+			if (!oka || !okb || max(a.x, b.x) < x || min(a.x, b.x) > x + bw || max(a.y, b.y) < y || min(a.y, b.y) > y + bh)
+			{
+				continue;
+			}
+			for (int r = 0; r < th; r++)
+			{
+				for (int c = 0; c < tw; c++)
+				{
+					int col = mirror ? tw - 1 - c : c;
+					int bit = r * tw + col;
+					if (bit / 4 >= int(hex.Length()) || (HexDigit(hex.ByteAt(bit / 4)) & (8 >> (bit % 4))) == 0)
+					{
+						continue;
+					}
+					// This pixel's four corners on the screen (its sides lean a little with the
+					// camera tilted, so two corners alone left slivers between neighbours that
+					// the bar showed through; Ryan, 2026-11-21), and a hair round them.
+					double xl = (c * texW - off.x) * t.scale.x, xr = ((c + 1) * texW - off.x) * t.scale.x;
+					double zt = (off.y - r * texH) * t.scale.y, zb = (off.y - (r + 1) * texH) * t.scale.y;
+					Vector2 p0, p1, p2, p3;
+					bool ok0, ok1, ok2, ok3;
+					[ok0, p0] = ToScreen(at + right * xl + (0, 0, zt), e, w, h, focal, yaw, pitch);
+					[ok1, p1] = ToScreen(at + right * xr + (0, 0, zt), e, w, h, focal, yaw, pitch);
+					[ok2, p2] = ToScreen(at + right * xl + (0, 0, zb), e, w, h, focal, yaw, pitch);
+					[ok3, p3] = ToScreen(at + right * xr + (0, 0, zb), e, w, h, focal, yaw, pitch);
+					if (!ok0 || !ok1 || !ok2 || !ok3)
+					{
+						continue;
+					}
+					double x0 = min(min(p0.x, p1.x), min(p2.x, p3.x)) - 0.35, x1 = max(max(p0.x, p1.x), max(p2.x, p3.x)) + 0.35;
+					double y0 = min(min(p0.y, p1.y), min(p2.y, p3.y)) - 0.35, y1 = max(max(p0.y, p1.y), max(p2.y, p3.y)) + 0.35;
+					if (x1 < x || x0 > x + bw || y1 < y || y0 > y + bh)
+					{
+						continue;
+					}
+					rx0.Push(x0);
+					ry0.Push(y0);
+					rx1.Push(x1);
+					ry1.Push(y1);
+				}
+			}
+		}
+		// Walls are boxes, not pictures: for each screen pixel of the bar, whether the line from
+		// the camera through it meets a nearby box before the bar's depth (Ryan, 2026-11-21: the
+		// bar showed through walls). Runs of covered pixels down a column become one rectangle.
+		Array<RomtgWall> boxes;
+		for (int i = 0; i < things.Size(); i++)
+		{
+			let wall = RomtgWall(things[i]);
+			if (wall == null)
+			{
+				continue;
+			}
+			double dist = (wall.pos.xy - me.xy).Length();
+			if (dist < tile * 5 + wall.boxHalf)
+			{
+				boxes.Push(wall);
+			}
+		}
+		if (boxes.Size() == 0)
+		{
+			return;
+		}
+		// In Doom's stretched space (heights times the pixel ratio, ToScreen), where the screen's
+		// lines are straight.
+		double ps = level.pixelstretch;
+		double rp = RenderPitch(pitch);
+		Vector3 fwdV = (cos(rp) * cos(yaw), cos(rp) * sin(yaw), -sin(rp));
+		Vector3 upV = (sin(rp) * cos(yaw), sin(rp) * sin(yaw), cos(rp));
+		Vector3 eyeS = (e.ViewPos.x, e.ViewPos.y, e.ViewPos.z * ps);
+		for (int px = int(floor(x)); px < int(ceil(x + bw)); px++)
+		{
+			int runFrom = -1;
+			int pyEnd = int(ceil(y + bh));
+			for (int py = int(floor(y)); py <= pyEnd; py++)
+			{
+				bool hit = false;
+				if (py < pyEnd)
+				{
+					// The line through this pixel's middle, one unit of depth per unit of T.
+					Vector3 dir = fwdV + right * ((px + 0.5 - w / 2) / focal) + upV * ((h / 2 - (py + 0.5)) / focal);
+					for (int k = 0; k < boxes.Size() && !hit; k++)
+					{
+						Vector3 b = boxes[k].pos;
+						double half = boxes[k].boxHalf > 0 ? boxes[k].boxHalf : tile / 2;
+						double tall = boxes[k].boxHeight > 0 ? boxes[k].boxHeight : tile;
+						hit = RayHitsBox(eyeS, dir, (b.x, b.y, b.z * ps), half, tall * ps, depth);
+					}
+				}
+				if (hit && runFrom < 0)
+				{
+					runFrom = py;
+				}
+				else if (!hit && runFrom >= 0)
+				{
+					rx0.Push(px);
+					ry0.Push(runFrom);
+					rx1.Push(px + 1);
+					ry1.Push(py);
+					runFrom = -1;
+				}
+			}
+		}
+	}
+
+	// Whether the line FROM + DIR * t, 0 < t < UPTO, goes through the box BOX +- HALF across,
+	// BOX.z .. BOX.z + HEIGHT up (slabs).
+	clearscope static bool RayHitsBox(Vector3 from, Vector3 dir, Vector3 box, double half, double height, double upto)
+	{
+		double t0 = 0, t1 = upto;
+		for (int axis = 0; axis < 3; axis++)
+		{
+			double o = axis == 0 ? from.x : axis == 1 ? from.y : from.z;
+			double v = axis == 0 ? dir.x : axis == 1 ? dir.y : dir.z;
+			double lo = axis == 0 ? box.x - half : axis == 1 ? box.y - half : box.z;
+			double hi = axis == 0 ? box.x + half : axis == 1 ? box.y + half : box.z + height;
+			if (abs(v) < 1e-9)
+			{
+				if (o < lo || o > hi) return false;
+				continue;
+			}
+			double a = (lo - o) / v, b = (hi - o) / v;
+			if (a > b) { double tmp = a; a = b; b = tmp; }
+			t0 = max(t0, a);
+			t1 = min(t1, b);
+			if (t0 > t1) return false;
+		}
+		return true;
+	}
+
+	// RotMG's health colour (Character.green2redu): green when full, through yellow, to red.
+	clearscope static Color Green2Red(double frac)
+	{
+		int r = frac >= 0.5 ? int(255 * (1 - frac) * 2) : 255;
+		int g = frac >= 0.5 ? 255 : int(255 * frac * 2);
+		return Color(255, r, g, 0);
+	}
+
+	// A point in the world on the screen (as DrawNameTags projects), and whether it's in front.
+	// A point in the world on the screen, exactly as Doom's renderer projects it
+	// (hw_drawinfo.cpp, r_utility.cpp): the world's heights stretched by the level's pixel
+	// ratio before turning to the view, and the view's pitch adjusted for that stretch. (Doom
+	// sprites stand upright; projecting as if the stretch came after put their pixels a little
+	// off from where Doom draws them, so the bar's cut-outs missed; Ryan, 2026-11-21.)
+	ui bool, Vector2 ToScreen(Vector3 pt, RenderEvent e, double w, double h, double focal, double yaw, double pitch)
+	{
+		Vector3 d = pt - e.ViewPos;
+		d.z *= level.pixelstretch;
+		double rp = RenderPitch(pitch);
+		double fwd = d.x * cos(yaw) + d.y * sin(yaw);
+		double right = d.x * sin(yaw) - d.y * cos(yaw);
+		double depth = fwd * cos(rp) - d.z * sin(rp);
+		double up = fwd * sin(rp) + d.z * cos(rp);
+		if (depth < 4)
+		{
+			return false, (0, 0);
+		}
+		return true, (w / 2 + right / depth * focal, h / 2 - up / depth * focal);
+	}
+
+	// The pitch Doom renders with for a look PITCH: tan stretched by the pixel ratio.
+	clearscope static double RenderPitch(double pitch)
+	{
+		return atan2(sin(pitch) * level.pixelstretch, cos(pitch));
+	}
+
+	// How far in front of the camera D (from it) is, as ToScreen measures it.
+	clearscope static double ViewDepth(Vector3 d, double yaw, double pitch)
+	{
+		double rp = RenderPitch(pitch);
+		return (d.x * cos(yaw) + d.y * sin(yaw)) * cos(rp) - d.z * level.pixelstretch * sin(rp);
 	}
 
 	// RotMG's status texts over things (the damage you do, mostly): over the thing's head,
@@ -1676,9 +2310,20 @@ class RomtgHandler : StaticEventHandler
 		for (int i = 0; i < floatAt.Size(); i++)
 		{
 			double age = clamp((level.maptime - floatAt[i] + e.FracTic) / FLOAT_TICS, 0, 1);
-			// Over the head (HeadOf) where it was when last seen, rising.
+			// Over the head (HeadOf), rising: where the thing is drawn this frame (between its
+			// last two places, as Doom draws it) while it's there, else where it was last seen.
+			// From its tic place only, it lagged and jumped after a moving thing (your own, in
+			// third person; Ryan, 2026-11-21).
 			double head = floatZ[i] + tile * (0.15 + 0.6 * age);
-			Vector3 d = (floatX[i], floatY[i], head) - e.ViewPos;
+			Vector2 at = (floatX[i], floatY[i]);
+			Actor ft = i < floatThing.Size() ? floatThing[i] : null;
+			if (ft != null)
+			{
+				Vector3 now = ft.prev + (ft.pos - ft.prev) * e.FracTic;
+				at = now.xy;
+				head += now.z - ft.pos.z;
+			}
+			Vector3 d = (at.x, at.y, head) - e.ViewPos;
 			double fwd = d.x * cos(yaw) + d.y * sin(yaw);
 			double right = d.x * sin(yaw) - d.y * cos(yaw);
 			double depth = fwd * cos(pitch) - d.z * sin(pitch);
@@ -1882,6 +2527,37 @@ class RomtgHandler : StaticEventHandler
 		{
 			control = a[1] == "1";
 		}
+		else if (c == "cam" && a.Size() >= 2)
+		{
+			bool on = a[1] == "1";
+			if (on && !thirdPerson)
+			{
+				mo.pitch = CAM_PITCH;   // looking down at yourself
+				throwPitch = (CAM_PITCH_MIN + CAM_PITCH_MAX) / 2;
+			}
+			else if (!on && thirdPerson)
+			{
+				mo.pitch = 0;
+			}
+			thirdPerson = on;
+		}
+		else if (c == "selfid" && a.Size() >= 2)
+		{
+			selfId = a[1].ToInt();
+			selfBack = a.Size() >= 3 && a[2] == "1";
+			selfWidth = a.Size() >= 4 ? a[3].ToDouble() : 0;
+			selfHeight = a.Size() >= 5 ? a[4].ToDouble() : 0;
+		}
+		else if (c == "throwaim" && a.Size() >= 2)
+		{
+			throwAim = a[1] == "1";
+			if (throwAim && a.Size() >= 4)
+			{
+				throwMax = a[2].ToDouble();
+				throwRadius = a[3].ToDouble();
+			}
+			throwSent = -1;
+		}
 		else if (c == "cond" && a.Size() >= 3)
 		{
 			cond0 = a[1].ToInt();
@@ -2073,6 +2749,7 @@ class RomtgHandler : StaticEventHandler
 					animAct.Resize(id + 1);
 					animSince.Resize(id + 1);
 					animYaw.Resize(id + 1);
+					animMs.Resize(id + 1);
 					for (int k = was; k <= id; k++) animAct[k] = -1;
 				}
 				int act = a[2].ToInt();
@@ -2082,6 +2759,7 @@ class RomtgHandler : StaticEventHandler
 				}
 				animAct[id] = act;
 				animYaw[id] = a[3].ToDouble();
+				animMs[id] = a.Size() >= 5 ? a[4].ToInt() : 0;
 			}
 		}
 		else if (c == "sa" && a.Size() >= 5)
@@ -2154,6 +2832,7 @@ class RomtgHandler : StaticEventHandler
 		else if (c == "atk" && a.Size() >= 2)
 		{
 			atkAt = level.maptime;
+			atkMs = a[1].ToInt();
 			atkTics = max(3, int(a[1].ToInt() * 35 / 1000));
 		}
 		else if (c == "bg" && a.Size() >= 2)
@@ -2163,6 +2842,10 @@ class RomtgHandler : StaticEventHandler
 		else if (c == "panel" && a.Size() >= 2)
 		{
 			panel = a[1] == "1";
+		}
+		else if (c == "modal" && a.Size() >= 2)
+		{
+			modalUp = a[1] == "1";
 		}
 		else if (c == "b" && a.Size() >= 7)
 		{
@@ -2245,6 +2928,10 @@ class RomtgHandler : StaticEventHandler
 		}
 		else if (c == "d" && a.Size() >= 2)
 		{
+			if (a[1].ToInt() == selfId)
+			{
+				selfId = -1;
+			}
 			Put(a[1].ToInt(), null);
 		}
 		else if (c == "shift" && a.Size() >= 3)
@@ -2309,6 +2996,7 @@ class RomtgHandler : StaticEventHandler
 		}
 		else if (c == "clear")
 		{
+			selfId = -1;   // its id may go to something else now (KeepSelf would carry that about)
 			Console.PrintfEx(PRINT_HIGH | PRINT_NONOTIFY, "[romtg] clear at tic %d", level.maptime);
 			for (int i = 0; i < things.Size(); i++)
 			{
@@ -2513,6 +3201,7 @@ class RomtgSide : RomtgPiece
 class RomtgWall : RomtgPiece
 {
 	Array<Actor> parts;
+	double boxHalf, boxHeight;   // the box: BOXHALF each way round pos, BOXHEIGHT up from it
 
 	void Build(double size, string side, string top, double scale, double height = 0)
 	{
@@ -2521,6 +3210,8 @@ class RomtgWall : RomtgPiece
 		{
 			height = size;
 		}
+		boxHalf = half;
+		boxHeight = height;
 		for (int i = 0; i < 4; i++)
 		{
 			// East, north, west and south faces, each facing out.

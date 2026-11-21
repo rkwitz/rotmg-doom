@@ -1,0 +1,72 @@
+diff --git a/TK-Client/src/com/company/assembleegameclient/parameters/Parameters.as b/TK-Client/src/com/company/assembleegameclient/parameters/Parameters.as
+index dc5dc10..ddcf396 100644
+--- a/TK-Client/src/com/company/assembleegameclient/parameters/Parameters.as
++++ b/TK-Client/src/com/company/assembleegameclient/parameters/Parameters.as
+@@ -107,6 +107,9 @@ public class Parameters {
+         setDefaultKey("rotateLeft", KeyCodes.Q);
+         setDefaultKey("rotateRight", KeyCodes.E);
+         setDefaultKey("useSpecial", KeyCodes.SPACE);
++        // ROMTG-Doom: the swapper's own keys, set in Options like the rest (scripts/duo.py).
++        setDefaultKey("romtgSwap", 192);   // ` / ~
++        setDefaultKey("romtgQuit", KeyCodes.F10);
+         setDefaultKey("interact", KeyCodes.NUMBER_0);
+         setDefaultKey("useInvSlot1", KeyCodes.NUMBER_1);
+         setDefaultKey("useInvSlot2", KeyCodes.NUMBER_2);
+diff --git a/TK-Client/src/com/company/assembleegameclient/ui/options/Options.as b/TK-Client/src/com/company/assembleegameclient/ui/options/Options.as
+index ed1dcb2..2d6177c 100644
+--- a/TK-Client/src/com/company/assembleegameclient/ui/options/Options.as
++++ b/TK-Client/src/com/company/assembleegameclient/ui/options/Options.as
+@@ -305,6 +305,10 @@ public class Options extends Sprite
+       this.addOption(new KeyMapper("togglePerformanceStats","Toggle Performance Stats","This key will toggle a display of fps and memory usage"));
+       this.addOption(new KeyMapper("toggleCentering","Toggle Centering of Player","This key will toggle the position between centered and " + "offset"));
+       this.addOption(new KeyMapper("interact","Interact/Buy","This key will allow you to enter a portal or buy an item"));
++      // ROMTG-Doom: the first-person keys. Every key above works in Doom too (scripts/duo.py
++      // follows these bindings); these two are the swapper's own.
++      this.addOption(new KeyMapper("romtgSwap","Swap First Person / Top Down","Switches between Doom's first-person view and RotMG's own"));
++      this.addOption(new KeyMapper("romtgQuit","Close Both Games","Closes Doom, RotMG and your local server"));
+       this.addOption(new ChoiceOption("contextualClick",new <String>["On","Off"],[true,false],"Contextual Click","Toggle the contextual click functionality",null));
+    }
+ 
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index d2d2039..d15fb7f 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -996,6 +996,10 @@ package romtg
+             }
+             optionsSent = covered;
+             send("options " + (optionsSent ? 1 : 0));
++            if (!covered)
++            {
++               sendBinds();   // the options may have changed a key
++            }
+             flush();
+          }
+          var ingame:int = map != null && map.gs_ != null && map.gs_.stage != null || MapLoadingView.showing != null ? 1 : 0;
+@@ -1024,9 +1028,27 @@ package romtg
+       }
+ 
+       /** The swapper just came up: it gets the whole map as it is now. */
++      /** The keys the swapper takes in Doom, as bound in RotMG's Options (Ryan, 2026-11-18:
++       *  "a way to change keybinds in the settings"): `binds NAME=KEYCODE ...`. Flash key codes
++       *  are Windows' virtual-key codes for every key RotMG can bind. */
++      private static const BOUND:Array = ["useHealthPotion", "useMagicPotion", "escapeToNexus", "interact",
++         "useSpecial", "rotateLeft", "rotateRight", "useInvSlot1", "useInvSlot2", "useInvSlot3", "useInvSlot4",
++         "useInvSlot5", "useInvSlot6", "useInvSlot7", "useInvSlot8", "romtgSwap", "romtgQuit"];
++
++      private static function sendBinds() : void
++      {
++         var line:String = "binds";
++         for each (var name:String in BOUND)
++         {
++            line += " " + name + "=" + uint(Parameters.data_[name]);
++         }
++         send(line);
++      }
++
+       private static function onConnect(event:Event) : void
+       {
+          ingameSent = -1;
++         sendBinds();
+          if (!watching && WebMain.STAGE != null)
+          {
+             watching = true;

@@ -1,0 +1,56 @@
+diff --git a/TK-Client/src/romtg/DoomLink.as b/TK-Client/src/romtg/DoomLink.as
+index 75f8a6d..9b24def 100644
+--- a/TK-Client/src/romtg/DoomLink.as
++++ b/TK-Client/src/romtg/DoomLink.as
+@@ -651,6 +651,21 @@ package romtg
+          {
+             sendWalking(player, now);
+          }
++         // Your health for the bar under your character in Doom's third person (the HUD's bar
++         // at the bottom is off then; Ryan, 2026-11-21).
++         if (thirdPerson)
++         {
++            var myHp:String = player.hp_ + " " + player.maxHP_;
++            if (myHp != myHpSent)
++            {
++               myHpSent = myHp;
++               send("myhp " + myHp);
++            }
++         }
++         else
++         {
++            myHpSent = "";
++         }
+          // Your status effects for Doom (blind, drunk, confused...), RotMG's two words of them.
+          var cond:String = player.condition_[0] + " " + player.condition_[1];
+          if (cond != condSent)
+@@ -1210,7 +1225,8 @@ package romtg
+       }
+ 
+       /** Doom shows you from behind (third person): your status texts go over you there. */
+-      private static var thirdPerson:Boolean = false;
++      public static var thirdPerson:Boolean = false;
++      private static var myHpSent:String = "";
+ 
+       /** Doom's gotos are dropped until then (ms, getTimer): the server just moved you. */
+       private static var gotoQuietUntil:int = 0;
+diff --git a/TK-Client/src/romtg/HudWindow.as b/TK-Client/src/romtg/HudWindow.as
+index f5488c6..3a9aeef 100644
+--- a/TK-Client/src/romtg/HudWindow.as
++++ b/TK-Client/src/romtg/HudWindow.as
+@@ -329,8 +329,13 @@ package romtg
+          // Chat: RotMG's lines, bottom left, gone after 20 seconds as in RotMG.
+          drawChat(now, 600);
+ 
+-         // Your own health, as RotMG shows it under your character: bottom middle.
+-         drawMyHealth(player, w);
++         // Your own health, as RotMG shows it under your character: bottom middle; in Doom's
++         // third person it's under your character itself instead (Ryan, 2026-11-21).
++         myHealth.visible = myHealthText.visible = !DoomLink.thirdPerson;
++         if (!DoomLink.thirdPerson)
++         {
++            drawMyHealth(player, w);
++         }
+          drawMyStatus(player, w, now);
+ 
+          // A dialog over Doom (the pets window, the potion storage...): what of this would draw

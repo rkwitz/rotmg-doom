@@ -44,15 +44,30 @@ def copy_tree(src: Path, dst: Path, skip=()) -> None:
 
 
 def exe(script: Path, name: str, out: Path, work: Path, extra: list[str]) -> bool:
-    """One-file launcher with PyInstaller, into OUT."""
+    """Launcher with PyInstaller, into OUT: NAME.exe and its Python beside it in NAME-lib/.
+
+    Not one file: a one-file PyInstaller exe unpacks itself to a temp folder and runs from
+    there, which together with what Play.exe does (a keyboard hook, moving other programs'
+    windows, closing processes) Windows Defender took for malware and quarantined
+    (Behavior:Win32/DefenseEvasion, Ryan 2026-11-21)."""
     try:
         import PyInstaller  # noqa: F401
     except ImportError:
         print(f"PyInstaller missing: {name}.exe not built (pip install pyinstaller)")
         return False
-    subprocess.run([sys.executable, "-m", "PyInstaller", "--noconfirm", "--onefile", "--console",
-                    "--name", name, "--distpath", str(out), "--workpath", str(work / "build"),
+    dist = work / "dist"
+    lib = f"{name.replace(' ', '-').lower()}-lib"
+    subprocess.run([sys.executable, "-m", "PyInstaller", "--noconfirm", "--onedir", "--console", "--noupx",
+                    "--contents-directory", lib,
+                    "--name", name, "--distpath", str(dist), "--workpath", str(work / "build"),
                     "--specpath", str(work), *extra, str(script)], check=True)
+    old = out / f"{name}.exe"
+    if old.exists():
+        old.unlink()
+    if (out / lib).exists():
+        shutil.rmtree(out / lib)
+    shutil.copy2(dist / name / f"{name}.exe", old)
+    shutil.copytree(dist / name / lib, out / lib)
     return True
 
 
