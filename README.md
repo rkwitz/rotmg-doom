@@ -2,7 +2,7 @@
 
 # RotMG x Doom
 
-Walk around Realm of the Mad God in first person, in Doom.
+Walk around Realm of the Mad God in first person (or third person), in Doom.
 
 A local Realm of the Mad God server runs the game: the realm, its enemies, their bullets, your HP,
 your class and your loot. A patched Doom source port (UZDoom) draws the same world in 3D using
@@ -21,6 +21,7 @@ while you're in Doom.
 - [Set it up (once)](#set-it-up-once)
 - [Play](#play)
 - [Controls](#controls)
+- [Third person](#third-person)
 - [Host a server for friends](#host-a-server-for-friends)
 - [Updating](#updating)
 - [Troubleshooting](#troubleshooting)
@@ -144,8 +145,8 @@ anything shaped like one, since nothing is sent. Names are letters only, at most
 and play. Your accounts and characters stay in Memurai between runs.
 
 RotMG starts in front, and Doom keeps running hidden behind it. Press **~** (or click the orange
-swap icon next to the nexus button in RotMG's side panel) to go into Doom. **F10** closes both
-games and the server.
+swap icon next to the nexus button in RotMG's side panel) to go into Doom. In Doom, **C** switches
+between first and third person. **F10** closes both games and the server.
 
 ## Controls
 
@@ -153,7 +154,7 @@ games and the server.
 
 | Key | Does |
 |---|---|
-| **~** or **Scroll Lock** (or the orange icon in RotMG's side panel) | Swap between RotMG and Doom |
+| **~** or **Scroll Lock** (or the orange swap icon in RotMG's side panel) | Swap between RotMG and Doom |
 | **F10** | Close both games and the server |
 
 **In Doom:**
@@ -162,7 +163,8 @@ games and the server.
 |---|---|
 | Your Doom movement keys and mouse | Walk and look. You move at your character's real RotMG speed, with RotMG's collisions |
 | Fire | Shoot your RotMG weapon where the crosshair is, at its own rate of fire |
-| **Space** | Your class ability, aimed where you look |
+| **C** (or the camera icon in RotMG's side panel) | First person / [third person](#third-person) |
+| **Space** | Your class ability, aimed where you look. Thrown abilities: hold to aim, let go to throw (below) |
 | **F** / **V** | Health potion / magic potion |
 | **1-8** | Use inventory slot 1-8 |
 | **Enter** | Interact: enter a portal, open a loot bag |
@@ -171,14 +173,41 @@ games and the server.
 | **Tab** | Hand the mouse to RotMG's side panel (inventory, swapping and dropping items) with Doom still on screen; Tab again, or click Doom, to go back |
 | **Esc** | RotMG's options screen |
 
-RotMG's keys go through your own RotMG key bindings, so if you rebind them in RotMG, the Doom keys
-follow. When a RotMG dialog, shop, menu or the death screen opens, the swapper brings RotMG forward
-on its own and goes back to Doom when it closes.
+**Changing keys:** every key above except Doom's movement, Tab and Esc follows your RotMG key
+bindings, so you change them in RotMG's **Options → Controls**, and Doom picks the change up as soon
+as you close Options. Three entries there are this mod's own: **Swap First Person / Top Down**
+(default `~`), **First / Third Person Camera** (default C) and **Close Both Games** (default F10).
+Scroll Lock always swaps too, and Enter always interacts in Doom.
+
+**Thrown abilities** (the huntress's trap, the assassin's poison, the necromancer's skull, the
+mystic's orb, the sorcerer's lightning, teleport cloaks): hold Space and Doom draws the throw's arc
+and a ring where it lands, the size of what it does there. Look up to throw farther (up to 8
+tiles; teleports up to the cloak's range), down to throw closer, and let go to throw. Other
+abilities fire as soon as you press Space; the ninja's star is held and thrown on release, as in
+RotMG.
+
+When a RotMG dialog, shop, menu or the death screen opens, the swapper brings RotMG forward on its
+own and goes back to Doom when it closes.
 
 In Doom you see what RotMG sees: its ground on the floor, walls as blocks, and every enemy, player,
 portal, bag and bullet as RotMG's own sprites, out to 48 tiles with fog. RotMG's own HUD (chat, gold
 and fame, the boss bar, XP and damage texts) is drawn over Doom, and enemies get health bars at
 their feet.
+
+## Third person
+
+Press **C** in Doom (or click the camera icon left of the swap icon in RotMG's side panel) to put
+the camera behind and above your character, looking down at a fixed low angle; C again goes back
+to your own eyes. The camera turns with your mouse, so you aim the same way: you shoot where you
+face. Moving the mouse up and down doesn't tilt the camera; it only sets how far thrown abilities
+go.
+
+In third person you see your own character, seen from behind, walking and attacking with RotMG's
+own animation frames and timing. Its health bar sits just under it, as in RotMG, and things in front
+of you (your pet, players, statues, walls) hide it as they would in the world. Your damage, healing
+and XP texts float over your character, and the HUD health bar at the bottom of the screen is off.
+Everything else (movement, firing, the side panel, other players and enemies) works as in first
+person.
 
 ### Swapper options
 
@@ -186,8 +215,8 @@ their feet.
 
 | Option | Default | |
 |---|---|---|
-| `--key` | `tilde,scrolllock` | Swap keys, comma separated: tilde, scrolllock, f12, pause, insert, numlock, rctrl, apps |
-| `--quit-key` | `f10` | Closes everything; `none` turns it off |
+| `--key` | `tilde,scrolllock` | Swap keys, comma separated: tilde, scrolllock, f12, pause, insert, numlock, rctrl, apps. Your RotMG Options binding replaces this once the client connects |
+| `--quit-key` | `f10` | Closes everything; `none` turns it off. Also set in RotMG's Options |
 | `--start` | `rotmg` | Which game fills the screen first: `rotmg` or `doom` |
 | `--minimap` | `menu` | `corner` shows all of RotMG as a minimap in the top left instead of its side panel |
 
@@ -218,7 +247,7 @@ Friends don't install anything; they just unzip the folder and run `Play.exe`.
    - `server\`: `Start Server.exe`, the account and game servers, and their own database (a Redis
      on port 6380 inside that folder, kept apart from your Memurai, so friends' accounts never mix
      with yours).
-   - `client\`: `Play.exe`, Doom, the RotMG client with its own AIR runtime, and `rotmg\server.txt`
+   - `client\`: `Play.exe` (with its `play-lib\` folder beside it), Doom, the RotMG client with its own AIR runtime, and `rotmg\server.txt`
      holding your address.
 
 5. **Forward TCP ports 2000 and 2002** on your router to your PC: 2000 is the account server and
@@ -268,6 +297,7 @@ edited by hand), add `--force` to start that checkout fresh from the pinned comm
 | `setup.py client` finishes but nothing changed in game | Check the output for `Syntax error:` lines. The compiler then writes no new client. The good build ends with `... bytes written to ...TK-Client.swf` |
 | Doom's HUD flickers | Doom uses OpenGL by default for this reason. On NVIDIA, set *Vulkan/OpenGL present method* to *Prefer layered on DXGI Swapchain* in the NVIDIA Control Panel |
 | A window is left borderless or hidden after a crash | The swapper restores windows on a clean exit only. Close the games and run `play.bat` again |
+| Windows Defender quarantines `Play.exe` (e.g. *Behavior:Win32/DefenseEvasion*) | A false positive: the launcher hooks the keyboard for the swap key, moves the game windows and can close them (F10), which looks like malware to behaviour checks. Restore it in Windows Security → Protection history → Allow, or exclude the folder. Rebuild the package if it's older than the one-folder launcher (`Play.exe` + `play-lib\`) |
 
 Logs from the last run are in `logs\`: `duo.log` (window swapping), `bridge.log` (the link between
 the games, client errors) and `uzdoom.log` (Doom's console). Server logs are in
